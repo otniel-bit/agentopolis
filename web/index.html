@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentopolis</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%231d2136'/><rect x='3' y='6' width='4' height='7' fill='%23c8b89a'/><rect x='9' y='4' width='4' height='9' fill='%23b7a2c9'/><rect x='4' y='8' width='2' height='2' fill='%23ffd97a'/><rect x='10' y='6' width='2' height='2' fill='%23ffd97a'/></svg>">
+</head>
+<body>
+<canvas id="city"></canvas>
+
+<header id="topbar">
+  <div id="logo">AGENTOPOLIS</div>
+  <div id="summary" role="status" aria-live="polite">
+    <button class="stat" id="stat-working" title="Sessions actively working"><span class="dot dot-work"></span><b>0</b> working</button>
+    <button class="stat" id="stat-waiting" title="Sessions idle, ready for a prompt"><span class="dot dot-idle"></span><b>0</b> idle</button>
+    <button class="stat attn" id="stat-needsyou" title="Open attention requests"><span class="dot dot-attn"></span><b>0</b> need you</button>
+    <button class="stat" id="stat-failed" title="Recent failures"><span class="dot dot-fail"></span><b>0</b> failed</button>
+    <button class="stat" id="stat-done" title="Completed in the last 5 minutes"><span class="dot dot-done"></span><b>0</b> done</button>
+  </div>
+  <div id="topbar-right">
+    <input id="search" type="search" placeholder="/ search the city" aria-label="Search buildings">
+    <button id="btn-fit" title="Fit city (F)">⤢</button>
+    <button id="btn-motion" title="Toggle reduced motion">🌿</button>
+  </div>
+</header>
+
+<aside id="drawer" hidden>
+  <div class="panel-head">
+    <h2>Needs you</h2>
+    <button class="close" data-close="drawer" aria-label="Close">✕</button>
+  </div>
+  <ul id="drawer-list"></ul>
+  <p id="drawer-empty" class="dim">Nobody is waiting on you. Enjoy the view.</p>
+</aside>
+
+<aside id="inspector" hidden>
+  <div class="panel-head">
+    <h2 id="insp-title">—</h2>
+    <button class="close" data-close="inspector" aria-label="Close">✕</button>
+  </div>
+  <div id="insp-body"></div>
+</aside>
+
+<div id="feed" aria-hidden="true"></div>
+
+<div id="offline" hidden>
+  <div class="offline-card">
+    <b>City lost contact with its server.</b>
+    <span class="dim">Run <code>npx agentopolis</code> to bring it back — reconnecting…</span>
+  </div>
+</div>
+
+<div id="hint" class="dim">drag to pan · scroll to zoom · click things · F fit · A attention</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -21,7 +21,7 @@
   "scripts": {
     "start": "node bin/agentopolis.js",
     "demo": "node bin/agentopolis.js --demo",
-    "test": "node --test test/"
+    "test": "node --test"
   },
   "keywords": [
     "claude-code",
