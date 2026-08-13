@@ -97,7 +97,7 @@ export function createCity(canvas, { onSelect } = {}) {
 
   function worldBounds() {
     if (!snap || snap.districts.length === 0) return { x: 0, y: 0, w: DISTRICT_W, h: DISTRICT_H };
-    let maxX = DISTRICT_W, maxY = DISTRICT_H;
+    let maxX = 200, maxY = 150; // actual content extents, not reserved cells
     for (const d of snap.districts) {
       const o = districtPos(d);
       const e = districtExtent(d);

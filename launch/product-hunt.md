@@ -58,14 +58,15 @@ in the PH card preview.
 > your explicit consent, and a backup of your settings first — adds async, observe-only
 > hooks to Claude Code. Each repo becomes a district. Unnamed sessions pitch tents:
 > temporary worksites. Name a session and the tent gets promoted to a permanent
-> building, construction animation included. Every agent is a pixel worker, and when a
+> building that rises out of the ground in a burst of confetti. Every agent is a pixel worker, and when a
 > session needs you — a permission prompt, a question — its building lights a beacon
 > and a worker raises a hand. The city persists across restarts.
 >
 > The rule I refused to break while building this: **truth before animation**. Every
 > sprite state maps to a real hook event through a deterministic classifier —
-> researching, editing, testing, building, running, version control, installing. If
-> Agentopolis can't classify a tool call, the worker shows "unknown." It never
+> researching, editing, testing, building, running, version control, installing,
+> planning, delegating. If Agentopolis can't classify a tool call, the worker's
+> state shows "unknown." It never
 > invents busywork, because a dashboard that lies is worse than no dashboard.
 >
 > Same rule for privacy: redaction happens at the edge, inside the hook, **before
@@ -101,15 +102,15 @@ slide 1 must work as the social-share thumbnail.
 |---|------|---------------|
 | 1 | **Hero city wide shot** — 3+ districts, mix of tents and permanent buildings, several workers mid-animation, summary bar visible | "Your agents at a glance: districts are repos, buildings are sessions, workers are agents." |
 | 2 | **Attention beacon closeup** — pulsing beacon on one building, worker with raised hand, attention summary visible | "Know the moment an agent needs you." |
-| 3 | **Rename → building promotion sequence** — before/after or mid-construction frame of a tent becoming a named building ("auth-refactor") | "Name a session and it earns a permanent building — construction crew included." |
+| 3 | **Rename → building promotion sequence** — before/after or mid-rise frame of a tent becoming a named building ("auth-refactor"), confetti burst visible | "Name a session and it earns a permanent building — confetti included." |
 | 4 | **Inspector open** — a clicked building/worker with live state and the redacted event feed panel | "Click anything, see the truth: real status, real events, nothing invented." |
-| 5 | **Demo-mode swarm** — busy city from `npx agentopolis --demo`, multiple subagents, a confetti completion if you can time it | "Zero setup tour: npx agentopolis --demo runs a full synthetic swarm." |
+| 5 | **Demo-mode swarm** — busy city from `npx agentopolis --demo`, multiple subagents, a subagent-completion burst if you can time it | "Zero setup tour: npx agentopolis --demo runs a full synthetic swarm." |
 | 6 | **Privacy/architecture card** — designed static slide (not a screenshot): edge-redaction diagram — hook → redact → disk/server → 127.0.0.1 browser | "Metadata only. Redacted before disk. 127.0.0.1 only. One command to uninstall." |
 
 Capture notes:
 - Slides 1–5 from demo mode (deterministic story: saturn-api / pixel-shop / dotfiles,
-  the "auth-refactor" promotion, the ~25s permission standoff — everything you need
-  occurs on a loop).
+  the "auth-refactor" promotion at ~6s, the ~25s permission standoff starting at ~30s —
+  the whole story loops every ~95 seconds, so every shot comes around again).
 - Slide 6 is designed in the same pixel style so the gallery reads as one artifact.
 - Optional slide-0 video: 30s screen capture of demo mode; PH autoplays video first
   when present.
@@ -202,12 +203,12 @@ Alternates if a slot is contested: **GitHub**, **Productivity**.
    working, waiting, and needs-you sessions."
 2. "Close-up of one pixel building with a bright pulsing beacon on its roof; a worker
    character in front raises a hand; a label reads 'permission needed'."
-3. "Three-frame sequence: a small tent, then a construction site with scaffolding and
-   workers, then a finished pixel building labeled 'auth-refactor'."
+3. "Three-frame sequence: a small tent, then a pixel building rising out of the ground
+   amid a burst of colorful particles, then the finished building labeled 'auth-refactor'."
 4. "City view with an inspector panel open on the right, listing an agent's current
    activity ('Running tests') and a scrolling feed of recent redacted events."
 5. "A busy pixel city in demo mode: many workers across three districts, several
-   subagents active, confetti bursting over one building that just finished a task."
+   subagents active, a small green burst above a worker whose subagent just finished."
 6. "Diagram slide in pixel style: Claude Code hook events flow through a redaction
    layer before reaching disk and a local server, which serves a browser at
    127.0.0.1 only. Caption: metadata only, one command to uninstall."

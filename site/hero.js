@@ -11,20 +11,18 @@ try {
   if (canvas) {
     const world = createWorld();
     const city = createCity(canvas);
-    let fitted = false;
+    // Refit a few times early: the first events land before layout settles,
+    // so a single immediate fit() aims the camera at a zero-height canvas.
+    for (const t of [300, 1200, 3500]) setTimeout(() => city.fit(), t);
     startDemo((evt) => {
       try {
         if (reduce(world, evt)) {
           city.setSnapshot(snapshot(world));
-          if (!fitted) {
-            city.fit();
-            fitted = true;
-          }
         }
       } catch (err) {
         console.warn('agentopolis hero: snapshot skipped —', err);
       }
-    });
+    }, { speed: 0.5 }); // visitors should meet a lively city, not an empty lot
   }
 } catch (err) {
   console.warn('agentopolis hero: renderer disabled —', err);

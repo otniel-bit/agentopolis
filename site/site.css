@@ -17,7 +17,6 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { scroll-behavior: smooth; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -51,10 +50,11 @@ a { color: var(--work); }
   justify-content: center;
   text-align: center;
   padding: 48px 20px 96px;
-  /* scrim so the copy stays legible over the busiest city moment */
-  background: radial-gradient(ellipse 90% 62% at 50% 46%,
-    rgba(13, 15, 28, 0.82) 0%,
-    rgba(13, 15, 28, 0.55) 55%,
+  /* scrim so the copy stays legible over the busiest city moment —
+     light-handed: the live city IS the pitch, let it show */
+  background: radial-gradient(ellipse 74% 52% at 50% 44%,
+    rgba(13, 15, 28, 0.66) 0%,
+    rgba(13, 15, 28, 0.34) 55%,
     rgba(13, 15, 28, 0) 100%);
 }
 

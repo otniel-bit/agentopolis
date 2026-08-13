@@ -49,8 +49,7 @@ export function validateEvent(evt) {
       problems.push(`bad data for ${evt.type}`);
     }
   }
-  // Browser copy: `process` doesn't exist here, so validation never throws.
-  if (problems.length > 0 && typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') {
+  if (problems.length > 0 && process.env.NODE_ENV !== 'production') {
     throw new Error(`invalid demo event: ${problems.join('; ')}`);
   }
   return problems.length === 0;

@@ -24,6 +24,8 @@ npx agentopolis
 
 It asks once for consent to add observation hooks to `~/.claude/settings.json`, then opens `http://127.0.0.1:4114`. New Claude Code sessions appear as they start. Requires Node 18+ and Claude Code.
 
+Flags: `--port <n>` (default 4114) · `--no-open` (don't launch the browser) · `--yes` (skip the consent prompt) · `--no-hooks` (never touch `~/.claude/settings.json` this run) · `--no-log` (no local event history).
+
 ## What you're looking at
 
 | In your terminal | In the city |
@@ -64,13 +66,13 @@ The promise: **everything stays on your machine, and only metadata exists in the
 **Stored** (locally, under `~/.agentopolis`, directory mode `0700`):
 - Session IDs, project paths, session names
 - Tool names and activity classifications ("editing", "testing", …)
-- Safe display targets: file basenames, command previews sanitized to ≤ 80 chars with tokens/passwords/bearer headers/env values masked
+- Safe display targets: file basenames, command previews sanitized to ≤ 80 chars with secret-shaped values masked — tokens, passwords, bearer headers, URL credentials, long base64 runs
 - Timestamps, and a redacted local event history (`events-YYYY-MM-DD.jsonl`, pruned after 90 days; disable with `--no-log`)
 
 **Never stored, never transmitted:**
 - File contents, diffs, `old_string`/`new_string`
 - Prompts and assistant messages
-- Tool responses, env variable values, secrets
+- Tool responses, or any payload field outside the small metadata allowlist
 - Anything, to anywhere: the server binds to `127.0.0.1` only — no cloud, no telemetry, no analytics
 
 **Leaving:** `npx agentopolis --uninstall` removes the hooks from `~/.claude/settings.json` and the bridge from your machine. Your local city history stays in `~/.agentopolis` until you delete that one folder — then every trace is gone.

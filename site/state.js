@@ -551,9 +551,19 @@ export function snapshot(world, now = Date.now()) {
 // ——— persistence hydration (geography + history survive restarts) ———
 
 export function dehydrate(world) {
+  // Plots held by temporary worksites are freed in the saved copy — those
+  // buildings don't survive a restart, so their land shouldn't either.
+  const districts = [...world.districts.values()].map((d) => {
+    const free = [...(d.freePlots || [])];
+    for (const b of world.buildings.values()) {
+      if (b.districtId === d.id && !b.permanent) free.push({ ...b.plot });
+    }
+    free.sort((p, q) => (p.y - q.y) || (p.x - q.x));
+    return { ...d, freePlots: free };
+  });
   return {
     v: 1,
-    districts: [...world.districts.values()],
+    districts,
     buildings: [...world.buildings.values()]
       .filter((b) => b.permanent)
       .map((b) => ({ ...b, sessionId: null, state: 'closed', attention: null })),
