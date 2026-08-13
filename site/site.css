@@ -17,6 +17,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -38,6 +42,9 @@ a { color: var(--work); }
   z-index: 0;
   /* background, not a widget: wheel scrolls the page, not the camera */
   pointer-events: none;
+  /* the copy owns the upper half; the city parades beneath it.
+     canvas gradient top === page bg, so the shift is seamless */
+  transform: translateY(16vh);
 }
 
 .hero {
@@ -144,7 +151,9 @@ a { color: var(--work); }
   color: var(--dim);
   font-size: 12px;
   opacity: 0.8;
+  text-decoration: none;
 }
+.scroll-nudge:hover { color: var(--text); opacity: 1; }
 @media (prefers-reduced-motion: no-preference) {
   .scroll-nudge { animation: nudge 2.4s ease-in-out infinite; }
   @keyframes nudge {
