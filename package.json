@@ -1,0 +1,40 @@
+{
+  "name": "agentopolis",
+  "version": "0.1.0",
+  "description": "Your AI coding agents, visualized as a living pixel city. Local-only mission control for Claude Code sessions and subagents.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "agentopolis": "bin/agentopolis.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "web",
+    "docs/PROTOCOL.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node bin/agentopolis.js",
+    "demo": "node bin/agentopolis.js --demo",
+    "test": "node --test test/"
+  },
+  "keywords": [
+    "claude-code",
+    "ai-agents",
+    "visualization",
+    "pixel-art",
+    "developer-tools",
+    "observability",
+    "local-first"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/otniel-bit/agentopolis.git"
+  },
+  "homepage": "https://agentopolis.dev"
+}
