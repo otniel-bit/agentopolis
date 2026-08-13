@@ -54,9 +54,9 @@ function connect() {
   });
   es.onerror = () => {
     es.close();
-    // a single dropped connection is normal; only alarm after ~8s dark
+    // a single dropped connection is normal; only alarm after ~12s dark
     if (!offlineTimer) {
-      offlineTimer = setTimeout(() => { $('offline').hidden = false; }, 8000);
+      offlineTimer = setTimeout(() => { $('offline').hidden = false; }, 12000);
     }
     setTimeout(connect, 1500);
   };

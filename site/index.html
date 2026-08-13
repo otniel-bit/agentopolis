@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentopolis — your AI agents are building a city</title>
+<meta name="description" content="Agentopolis turns Claude Code sessions and subagents into a living pixel city — local, truthful, glanceable mission control.">
+<meta property="og:title" content="Agentopolis">
+<meta property="og:description" content="Agentopolis turns Claude Code sessions and subagents into a living pixel city — local, truthful, glanceable mission control.">
+<meta property="og:image" content="og.png">
+<meta property="og:type" content="website">
+<link rel="stylesheet" href="site.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%231d2136'/><rect x='3' y='6' width='4' height='7' fill='%23c8b89a'/><rect x='9' y='4' width='4' height='9' fill='%23b7a2c9'/><rect x='4' y='8' width='2' height='2' fill='%23ffd97a'/><rect x='10' y='6' width='2' height='2' fill='%23ffd97a'/></svg>">
+</head>
+<body>
+
+<!-- The hero background is the real product: the shipped renderer + demo script, running live. -->
+<canvas id="hero-canvas" aria-hidden="true"></canvas>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="brand">A G E N T O P O L I S</div>
+    <h1>Your AI agents are building a city.</h1>
+    <p class="sub">Agentopolis turns Claude Code sessions and subagents into a living pixel city — local, truthful, glanceable mission control.</p>
+    <div class="hero-cta">
+      <button id="copy-cmd" type="button" title="Copy to clipboard">
+        <code><span class="p">$</span> <b>npx agentopolis</b></code>
+        <span class="copy-hint">click to copy</span>
+      </button>
+      <a class="btn" href="https://github.com/otniel-bit/agentopolis">GitHub &rarr;</a>
+    </div>
+    <p class="fineprint">This background is not a video — it's the actual renderer running the actual demo. Node 18+ &middot; Claude Code &middot; MIT &middot; zero dependencies</p>
+  </div>
+  <div class="scroll-nudge">&darr; how it works</div>
+</header>
+
+<main>
+  <section id="how">
+    <h2><span class="mark">##</span> How it works</h2>
+    <p class="section-lede">One command. No config. No cloud.</p>
+    <div class="steps">
+      <div class="step">
+        <span class="n">1</span>
+        <h3>Run <code>npx agentopolis</code></h3>
+        <p>It starts a tiny server on <code>127.0.0.1</code>, opens the city in your browser, and — with your explicit consent — adds async, observe-only hooks to <code>~/.claude/settings.json</code>. Your existing hooks are untouched, and the file is backed up first.</p>
+      </div>
+      <div class="step">
+        <span class="n">2</span>
+        <h3>Code like you always do</h3>
+        <p>Every Claude Code session appears as a worksite in a district named after its repo. Subagents walk out of the building as pixel workers, doing whatever they're actually doing — reading, editing, testing, committing.</p>
+      </div>
+      <div class="step">
+        <span class="n">3</span>
+        <h3>Glance, don't babysit</h3>
+        <p>When a session needs a permission or an answer, its building lights a pulsing beacon and a worker raises a hand. Everything else stays calm. One look at the skyline tells you who's working, who's stuck, who's done.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="grammar">
+    <h2><span class="mark">##</span> Reading the city</h2>
+    <p class="section-lede">Every pixel maps to something real. Nothing is decorative fiction.</p>
+    <div class="grammar-wrap">
+      <table class="grammar">
+        <thead><tr><th>You see</th><th>It means</th></tr></thead>
+        <tbody>
+          <tr><td>District</td><td>A repo (project directory). Districts keep their spot, so geography is learnable.</td></tr>
+          <tr><td>Tent worksite</td><td>An unnamed session — temporary. <span class="g-dim">Dismantled when the session ends.</span></td></tr>
+          <tr><td>Permanent building</td><td>An explicitly named session. Rename a session and the tent is promoted — construction animation, confetti, the works. It survives restarts.</td></tr>
+          <tr><td>Pixel worker</td><td>An agent. The foreman in the yellow hard hat is the session's main loop; subagents get their own hats (Explore, Plan, general-purpose&hellip;).</td></tr>
+          <tr><td>Worker at a station</td><td>Truthful activity from real tool calls: researching, editing, testing, building, running, committing, installing, planning, delegating.</td></tr>
+          <tr><td>Beacon + raised hand</td><td>The session needs <em>you</em> — a permission request or a question is waiting.</td></tr>
+          <tr><td>Smoke + red flash</td><td>A turn failed. Recovery is visible too — no silent errors, no fake fires.</td></tr>
+          <tr><td>Lights off</td><td>A named session ended. The building stays in the city, dark, ready to reopen.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="principles">
+    <h2><span class="mark">##</span> Principles</h2>
+    <p class="section-lede">Two rules the renderer never breaks.</p>
+    <div class="features">
+      <div class="feature">
+        <h3><span class="dot">&#9873;</span>Truth before animation</h3>
+        <p>Every animation is driven by a real event from Claude Code hooks. A worker only hammers while a tool call is actually running; the moment it ends, they stop. States come from a reducer over a versioned event protocol — <em>not vibes</em>.</p>
+        <p>Stale activities time out to idle, never to "failed". Out-of-order events are tolerated. Duplicates are dropped. If the city shows a test running, a test is running.</p>
+      </div>
+      <div class="feature">
+        <h3><span class="dot">&#127795;</span>Calm by default</h3>
+        <p>No sounds, no toasts, no notification anxiety. Workers stroll at an unhurried pace, buildings twinkle slowly, and <code>prefers-reduced-motion</code> is honored throughout.</p>
+        <p>Attention is the <em>only</em> loud thing in the city — a pulsing beacon you can spot from any zoom level. When nobody needs you, the city is just a nice place to have open on a second monitor.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="privacy">
+    <h2><span class="mark">##</span> Privacy is the architecture</h2>
+    <p class="section-lede">Not a settings toggle — the way the whole thing is built.</p>
+    <div class="privacy-grid">
+      <div class="privacy-item">
+        <h3>Local only</h3>
+        <p>The server binds to <code>127.0.0.1</code> and nothing else — ever. No telemetry, no analytics, no cloud, no network calls. This page has none either.</p>
+      </div>
+      <div class="privacy-item">
+        <h3>Metadata only</h3>
+        <p>Redaction happens at the edge, in the hook bridge, <em>before anything hits disk</em>. File basenames, not contents. Sanitized command heads (secrets masked, 80-char cap), never full commands. No prompts, no assistant messages, no env values.</p>
+      </div>
+      <div class="privacy-item">
+        <h3>Open source</h3>
+        <p>MIT licensed, zero runtime dependencies, small enough to actually read. The event protocol is documented; the redaction layer is one file.</p>
+      </div>
+      <div class="privacy-item">
+        <h3>One-command uninstall</h3>
+        <p><code>npx agentopolis --uninstall</code> removes the hooks and the bridge from your machine. Your local history lives in <code>~/.agentopolis</code> — delete it any time.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <h2><span class="mark">##</span> FAQ</h2>
+    <p class="section-lede">The five questions everyone asks.</p>
+    <details>
+      <summary>Will this slow down Claude Code?</summary>
+      <div class="a">No. The hooks are async and observe-only — they never block a tool call, a permission prompt, or your input, and they carry a 10-second timeout as a hard ceiling. If the city server isn't running, hook payloads spool to a local folder and are replayed on the next start.</div>
+    </details>
+    <details>
+      <summary>What data leaves my machine?</summary>
+      <div class="a">Nothing. The server listens on <code>127.0.0.1</code> only, and there is no telemetry of any kind. What's stored locally is already-redacted metadata: session ids, tool names, file basenames, sanitized command heads. File contents, prompts, and assistant messages never reach the event stream in the first place.</div>
+    </details>
+    <details>
+      <summary>Does it mess with my Claude Code settings?</summary>
+      <div class="a">Only with your consent — it asks before touching anything (or pass <code>--yes</code>). Hooks are merged into <code>~/.claude/settings.json</code> non-destructively: existing hooks from other tools are untouched, the file is backed up before the first write, and uninstall removes only Agentopolis's own entries.</div>
+    </details>
+    <details>
+      <summary>Do I lose the city when I restart?</summary>
+      <div class="a">No. Districts, permanent buildings, and geography persist in <code>~/.agentopolis/city.json</code> and survive restarts. Events that fire while the server is down are spooled and replayed, so the city catches up on what it missed.</div>
+    </details>
+    <details>
+      <summary>Can I try it without installing hooks?</summary>
+      <div class="a">Yes — <code>npx agentopolis --demo</code> runs a synthetic agent swarm and never touches your Claude settings. In fact, the background of this page is that exact demo: the shipped renderer fed by the shipped demo script, running live in your browser.</div>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <div class="links">
+    <a href="https://github.com/otniel-bit/agentopolis">GitHub</a>
+    <a href="https://www.npmjs.com/package/agentopolis">npm</a>
+    <a href="https://github.com/otniel-bit/agentopolis/blob/main/LICENSE">MIT License</a>
+  </div>
+  <div>127.0.0.1 is a nice neighborhood. &middot; <code>npx agentopolis</code></div>
+</footer>
+
+<script type="module" src="hero.js"></script>
+</body>
+</html>
