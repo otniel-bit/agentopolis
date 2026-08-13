@@ -66,7 +66,8 @@ The promise: **everything stays on your machine, and only metadata exists in the
 **Stored** (locally, under `~/.agentopolis`, directory mode `0700`):
 - Session IDs, project paths, session names
 - Tool names and activity classifications ("editing", "testing", …)
-- Safe display targets: file basenames, command previews sanitized to ≤ 80 chars with secret-shaped values masked — tokens, passwords, bearer headers, URL credentials, long base64 runs
+- Safe display targets: file names (basename + parent directory only), command previews truncated to 80 chars with secret-shaped values masked — tokens, passwords, bearer headers, URL credentials, long base64 runs
+- Search patterns (truncated to 40 chars), task subjects, and tool descriptions (truncated to 80)
 - Timestamps, and a redacted local event history (`events-YYYY-MM-DD.jsonl`, pruned after 90 days; disable with `--no-log`)
 
 **Never stored, never transmitted:**

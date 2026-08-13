@@ -150,8 +150,9 @@ test("redactHookPayload rebuilds tool_input safe fields", () => {
   const out = redactHookPayload(fullPayload);
   const ti = out.tool_input;
 
-  assert.equal(ti.file_path, "/Users/x/repo/auth.js");
-  assert.equal(ti.notebook_path, "/Users/x/repo/nb.ipynb");
+  // Paths are trimmed to basename + parent — full paths never reach disk.
+  assert.equal(ti.file_path, "repo/auth.js");
+  assert.equal(ti.notebook_path, "repo/nb.ipynb");
 
   assert.equal(ti.pattern.length, 40);
   assert.ok(ti.pattern.endsWith("…"));

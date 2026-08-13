@@ -77,7 +77,10 @@ export function startReconciler(world, ingest, { intervalActive = 4000, interval
         if (!id) continue;
         seen.add(id);
         const cwd = s.cwd || '/unknown';
-        if (!world.sessions.has(id)) {
+        // Rediscover both brand-new sessions AND hydrated/ended ones the
+        // provider says are alive (e.g. running across a server restart).
+        const known = world.sessions.get(id);
+        if (!known || !known.live) {
           ingest(evt('session.started', id, cwd, { source: 'unknown' }));
         }
         ingest(evt('session.status', id, cwd, {

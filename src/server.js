@@ -21,9 +21,32 @@ const MIME = {
   '.json': 'application/json',
 };
 
-export function createCityServer(world, { logEvents = true, version = '0.0.0' } = {}) {
+export function createCityServer(world, { logEvents = true, persist = true, version = '0.0.0' } = {}) {
   const clients = new Set();
   let broadcastTimer = null;
+  let boundPort = null;
+
+  // DNS-rebinding defense: we only ever answer requests addressed to
+  // loopback names. A rebound hostname arrives with its own Host header.
+  function hostAllowed(req) {
+    const host = String(req.headers.host || '');
+    const bare = host.replace(/:\d+$/, '');
+    return bare === '127.0.0.1' || bare === 'localhost' || bare === '[::1]';
+  }
+
+  // CSRF defense for state-changing POSTs: browsers attach Origin to
+  // cross-site requests; anything not loopback is rejected. Local tools
+  // (curl, the hook bridge) send no Origin and pass.
+  function originAllowed(req) {
+    const origin = req.headers.origin;
+    if (!origin) return true;
+    try {
+      const o = new URL(origin);
+      return o.hostname === '127.0.0.1' || o.hostname === 'localhost' || o.hostname === '[::1]';
+    } catch {
+      return false;
+    }
+  }
 
   function broadcast() {
     if (broadcastTimer) return; // throttle to ≤10/s
@@ -42,8 +65,10 @@ export function createCityServer(world, { logEvents = true, version = '0.0.0' } 
     if (!evtOrNull) return false;
     const changed = reduce(world, evtOrNull);
     if (changed) {
-      if (logEvents) appendEventLog(evtOrNull);
-      saveCity(world);
+      if (persist) {
+        if (logEvents) appendEventLog(evtOrNull);
+        saveCity(world);
+      }
       broadcast();
     }
     return changed;
@@ -95,6 +120,8 @@ export function createCityServer(world, { logEvents = true, version = '0.0.0' } 
   }
 
   const server = http.createServer((req, res) => {
+    if (!hostAllowed(req)) { res.writeHead(403); return res.end(); }
+    if (req.method === 'POST' && !originAllowed(req)) { res.writeHead(403); return res.end(); }
     const url = new URL(req.url, 'http://localhost');
 
     if (req.method === 'GET' && url.pathname === '/events') {
@@ -156,10 +183,11 @@ export function createCityServer(world, { logEvents = true, version = '0.0.0' } 
     res.end();
   });
 
-  // Heartbeats keep proxies honest; sweep keeps stale state honest.
+  // Real ping events (not SSE comments) so the client can tell "quiet" from
+  // "dead"; sweep keeps stale state honest.
   const heartbeat = setInterval(() => {
     for (const res of clients) {
-      try { res.write(':hb\n\n'); } catch { clients.delete(res); }
+      try { res.write('event: ping\ndata: {}\n\n'); } catch { clients.delete(res); }
     }
   }, 15000);
   const sweeper = setInterval(() => { if (sweep(world)) broadcast(); }, 30000);
@@ -169,7 +197,10 @@ export function createCityServer(world, { logEvents = true, version = '0.0.0' } 
   function listen(port) {
     return new Promise((resolve, reject) => {
       server.once('error', reject);
-      server.listen(port, '127.0.0.1', () => resolve(server.address().port));
+      server.listen(port, '127.0.0.1', () => {
+        boundPort = server.address().port;
+        resolve(boundPort);
+      });
     });
   }
 

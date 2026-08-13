@@ -100,9 +100,16 @@ async function main() {
   pruneEventLogs();
 
   const world = createWorld();
-  loadCity(world);
+  const demoMode = args.has('--demo');
+  // Demo mode gets a throwaway world: it must never pollute the real city
+  // history with ghost districts or synthetic events.
+  if (!demoMode) loadCity(world);
 
-  const city = createCityServer(world, { logEvents: !args.has('--no-log'), version: VERSION });
+  const city = createCityServer(world, {
+    logEvents: !args.has('--no-log'),
+    persist: !demoMode,
+    version: VERSION,
+  });
 
   // Find a port; if another Agentopolis already owns it, just open that one.
   const wanted = parseInt(argValue('--port', '4114'), 10) || 4114;
@@ -112,8 +119,13 @@ async function main() {
       port = await city.listen(p);
     } catch (err) {
       if (err.code !== 'EADDRINUSE') throw err;
-      const running = await fetch(`http://127.0.0.1:${p}/api/health`, { signal: AbortSignal.timeout(500) })
-        .then((r) => r.json()).catch(() => null);
+      // Generous probe with one retry: a busy instance answering slowly must
+      // not be mistaken for a stranger, or two instances fight over state.
+      let running = null;
+      for (let attempt = 0; attempt < 2 && !running; attempt++) {
+        running = await fetch(`http://127.0.0.1:${p}/api/health`, { signal: AbortSignal.timeout(2000) })
+          .then((r) => r.json()).catch(() => null);
+      }
       if (running && running.ok) {
         console.log(`  Agentopolis is already running → http://127.0.0.1:${p}`);
         if (!args.has('--no-open')) openBrowser(`http://127.0.0.1:${p}`);
@@ -172,7 +184,7 @@ async function main() {
   const shutdown = () => {
     if (demo) demo.stop();
     if (reconciler) reconciler.stop();
-    saveCity(world, { immediate: true });
+    if (!demoMode) saveCity(world, { immediate: true });
     process.exit(0);
   };
   process.on('SIGINT', shutdown);

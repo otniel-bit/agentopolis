@@ -333,7 +333,15 @@ const buildingCache = new Map();
 export function buildingSprite(seedStr, floors, state, litSalt) {
   const key = `${seedStr}|${floors}|${state}|${litSalt}`;
   if (buildingCache.has(key)) return buildingCache.get(key);
-  if (buildingCache.size > 400) buildingCache.clear();
+  if (buildingCache.size > 400) {
+    // Evict the oldest quarter (Map preserves insertion order) — a full
+    // clear() re-renders every visible sprite in one frame and hitches.
+    let i = 0;
+    for (const k of buildingCache.keys()) {
+      buildingCache.delete(k);
+      if (++i >= 100) break;
+    }
+  }
 
   let h = 2166136261;
   for (let i = 0; i < seedStr.length; i++) { h ^= seedStr.charCodeAt(i); h = Math.imul(h, 16777619); }

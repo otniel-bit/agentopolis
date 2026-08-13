@@ -52,11 +52,30 @@ export function saveCity(world, { immediate = false } = {}) {
 }
 
 // Redacted normalized events only — this is the local history log.
+// Batched: a synchronous append per event would let a hook flood stall
+// the event loop on disk I/O.
+let logBuffer = [];
+let logTimer = null;
 export function appendEventLog(evt) {
   try {
-    const day = new Date(evt.at).toISOString().slice(0, 10);
+    logBuffer.push(JSON.stringify(evt));
+    if (logBuffer.length > 5000) logBuffer.splice(0, logBuffer.length - 5000);
+    if (!logTimer) {
+      logTimer = setTimeout(flushEventLog, 500);
+      if (logTimer.unref) logTimer.unref();
+    }
+  } catch { /* best-effort */ }
+}
+
+export function flushEventLog() {
+  logTimer = null;
+  if (!logBuffer.length) return;
+  const lines = logBuffer;
+  logBuffer = [];
+  try {
+    const day = new Date().toISOString().slice(0, 10);
     const file = path.join(homeDir(), `events-${day}.jsonl`);
-    fs.appendFileSync(file, JSON.stringify(evt) + '\n', { mode: 0o600 });
+    fs.appendFile(file, lines.join('\n') + '\n', { mode: 0o600 }, () => {});
   } catch { /* best-effort */ }
 }
 

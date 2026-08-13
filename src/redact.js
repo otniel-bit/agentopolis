@@ -9,19 +9,30 @@ const MAX_COMMAND = 80;
 // "bearer " swallow keeps `Authorization: Bearer xyz` masked as one unit.
 const SECRET_KV =
   /(token|secret|password|passwd|pwd|api[_-]?key|authorization|bearer)(\s*[=:]\s*)(?:bearer\s+)?\S+/gi;
+// Flag-style secrets separated by whitespace: `vault login --token s.abc`,
+// `aws configure set aws_secret_access_key wJalr…`. Over-masking a benign
+// word after "token" is an acceptable cost; leaking is not.
+const SECRET_FLAG =
+  /((?:--?[A-Za-z0-9-]*)?(?:token|secret|password|passwd|api[_-]?key|access[_-]?key)[A-Za-z0-9_-]*)\s+(?!\s*[-•])\S+/gi;
 const BARE_BEARER = /\b(bearer)\s+\S+/gi;
 const URL_CREDS = /(\/\/)[^/\s@]*:[^/\s@]*@/g;
+// curl/wget-style inline credentials: `-u user:pass`, `--user user:pass`.
+const USER_PASS_FLAG = /(\s(?:-u|--user)[= ]\s*[^\s:]+):\S+/g;
+// MySQL's real password form is ATTACHED (`-pSECRET`); the spaced form is a
+// database name. Mask the attached value for db-ish tools.
 const MYSQL_LIKE = /\b(mysql|mysqldump|mariadb|psql|pg_dump|pg_restore|mongo|mongosh)\b/;
-const LONG_RUN = /[A-Za-z0-9+/=]{40,}/g;
+const ATTACHED_P = /(^|\s)-p(?!\s|$)\S+/g;
+const LONG_RUN = /[A-Za-z0-9+/=]{35,}/g;
 
 function truncate(s, max) {
   return s.length <= max ? s : s.slice(0, max - 1) + ELLIPSIS;
 }
 
-// File paths are long [A-Za-z0-9/] runs too; keep slash-containing runs that
-// lack base64's +/= characters so paths survive while blobs get masked.
+// File paths are long [A-Za-z0-9/] runs too; keep runs that LOOK like paths
+// (leading /, ./, or ~/) — a slash alone is not proof (AWS secret keys
+// contain slashes), so everything else gets masked.
 function maskLongRun(run) {
-  if (run.includes("/") && !/[+=]/.test(run)) return run;
+  if (/^(\/|\.\/|~\/)/.test(run) && !/[+=]/.test(run)) return run;
   return MASK;
 }
 
@@ -37,10 +48,16 @@ export function sanitizeCommand(cmd) {
   // instead of swallowing the "; " separator.
   s = s.replace(URL_CREDS, `$1${MASK}@`);
   s = s.replace(SECRET_KV, `$1$2${MASK}`);
+  s = s.replace(SECRET_FLAG, `$1 ${MASK}`);
+  s = s.replace(USER_PASS_FLAG, `$1:${MASK}`);
   s = s.replace(BARE_BEARER, `$1 ${MASK}`);
-  // Bare `-p <value>` is only a password with mysql-like tools; masking it
-  // everywhere would eat things like `mkdir -p dir`.
-  if (MYSQL_LIKE.test(s)) s = s.replace(/(^|\s)-p +\S+/g, `$1-p ${MASK}`);
+  // Attached `-pSECRET` is the real db-password form; the spaced form is
+  // usually a database name, but masking it too costs nothing. Only for
+  // db-ish tools — `tar -pxf` and `mkdir -p dir` must survive.
+  if (MYSQL_LIKE.test(s)) {
+    s = s.replace(ATTACHED_P, `$1-p${MASK}`);
+    s = s.replace(/(^|\s)-p +\S+/g, `$1-p ${MASK}`);
+  }
   s = s.replace(LONG_RUN, maskLongRun);
 
   s = s.replace(/\s*[\r\n]+\s*/g, "; ");
@@ -62,6 +79,10 @@ const TOP_LEVEL_ALLOWLIST = [
   "__agentopolis_ts",
 ];
 
+// Small provider strings the adapter consumes; validated and capped here so
+// the adapter NEVER needs to reach past redaction into the raw payload.
+const SOURCE_ENUM = new Set(["startup", "resume", "clear", "compact", "fork", "unknown"]);
+
 function isPlainObject(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -81,10 +102,17 @@ function safeUrl(raw) {
   }
 }
 
+// Keep only the tail of a path (basename + parent) — enough for display and
+// disambiguation, and what the README's "Stored" list promises.
+function trimPath(p) {
+  const parts = p.replace(/\/+$/, "").split("/");
+  return parts.slice(-2).join("/");
+}
+
 function rebuildToolInput(input) {
   const out = {};
-  if (typeof input.file_path === "string") out.file_path = input.file_path;
-  if (typeof input.notebook_path === "string") out.notebook_path = input.notebook_path;
+  if (typeof input.file_path === "string") out.file_path = trimPath(input.file_path);
+  if (typeof input.notebook_path === "string") out.notebook_path = trimPath(input.notebook_path);
   if (typeof input.pattern === "string") out.pattern = truncate(input.pattern, 40);
   if (typeof input.url === "string") out.url = safeUrl(input.url);
   if (typeof input.description === "string") out.description = truncate(input.description, 80);
@@ -104,6 +132,20 @@ export function redactHookPayload(payload) {
     }
     if (isPlainObject(payload.tool_input)) {
       out.tool_input = rebuildToolInput(payload.tool_input);
+    }
+    if (typeof payload.source === "string") {
+      out.source = SOURCE_ENUM.has(payload.source) ? payload.source : "unknown";
+    }
+    if (typeof payload.reason === "string") out.reason = truncate(payload.reason, 40);
+    // Notification hint fields — ONLY on Notification payloads, where they
+    // are provider-generated UI strings; masked like commands, tightly capped.
+    if (payload.hook_event_name === "Notification") {
+      for (const k of ["notification_type", "matcher"]) {
+        if (typeof payload[k] === "string") out[k] = truncate(payload[k], 40);
+      }
+      for (const k of ["message", "title"]) {
+        if (typeof payload[k] === "string") out[k] = sanitizeCommand(payload[k]);
+      }
     }
     return out;
   } catch {

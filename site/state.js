@@ -65,7 +65,7 @@ function shortId(str) {
 const PLOT_ORDER = (() => {
   const seen = new Set();
   const order = [];
-  for (let ring = 0; ring < 8 && order.length < 48; ring++) {
+  for (let ring = 0; ring < 13 && order.length < 169; ring++) {
     for (let y = 0; y <= ring; y++) {
       for (let x = 0; x <= ring; x++) {
         if (Math.max(x, y) !== ring) continue;
@@ -76,6 +76,14 @@ const PLOT_ORDER = (() => {
   }
   return order;
 })();
+
+// Beyond the precomputed spiral, march row-major in a 13-wide band —
+// y >= 13 there, so it can never collide with spiral plots.
+function plotForIndex(n) {
+  if (n < PLOT_ORDER.length) return { ...PLOT_ORDER[n] };
+  const m = n - PLOT_ORDER.length;
+  return { x: m % 13, y: 13 + Math.floor(m / 13) };
+}
 
 function ensureDistrict(world, project) {
   const path = (project || '/unknown').replace(/\/+$/, '') || '/';
@@ -99,9 +107,7 @@ function ensureDistrict(world, project) {
 function allocatePlot(district) {
   if (!district.freePlots) district.freePlots = [];
   if (district.freePlots.length) return district.freePlots.shift();
-  const plot = PLOT_ORDER[Math.min(district.nextPlot, PLOT_ORDER.length - 1)];
-  district.nextPlot++;
-  return { ...plot };
+  return plotForIndex(district.nextPlot++);
 }
 
 // Dismantle a temporary worksite: its plot goes back into the pool.
@@ -141,8 +147,9 @@ function ensureSession(world, evt) {
 function attachBuilding(world, session, evt) {
   if (session.buildingId && world.buildings.has(session.buildingId)) return;
   const district = ensureDistrict(world, session.project);
-  // A returning explicit name reopens its old building instead of creating one.
-  const name = evt.data && evt.data.name;
+  // A returning explicit name reopens its old building instead of creating
+  // one — whether the name arrives on the event or is already on the session.
+  const name = (evt.data && evt.data.name) || session.name;
   if (name) {
     for (const b of world.buildings.values()) {
       if (b.districtId === district.id && b.permanent && b.name === name && !b.sessionId) {
@@ -242,6 +249,8 @@ function clearAttention(world, sessionId, agentId) {
 export function reduce(world, evt) {
   if (!validateEvent(evt)) return false;
   if (world.seenIds.has(evt.id)) return false;
+  // Growth cap: a flood of fabricated sessions must not exhaust memory.
+  if (evt.session && !world.sessions.has(evt.session) && world.sessions.size >= 1500) return false;
   world.seenIds.add(evt.id);
   world.seenOrder.push(evt.id);
   if (world.seenOrder.length > SEEN_LIMIT) {
@@ -258,8 +267,26 @@ export function reduce(world, evt) {
       const s = ensureSession(world, evt);
       s.live = true;
       s.endedAt = null;
-      const b = getBuilding(world, s);
-      if (b && b.state === 'closed') b.state = 'working';
+      // Revival path: resumed/rediscovered sessions need their building back
+      // (session.ended dismantled a worksite or detached a permanent building).
+      let b = getBuilding(world, s);
+      if (!b) {
+        s.buildingId = null;
+        attachBuilding(world, s, evt);
+        b = getBuilding(world, s);
+      }
+      if (b) {
+        if (!b.sessionId) b.sessionId = s.id;
+        if (b.sessionId === s.id && (b.state === 'closed' || b.state === 'idle')) b.state = 'working';
+      }
+      // ...and their root agent back on shift.
+      const root = ensureAgent(world, s.id, 'root', 'root', evt.at);
+      if (root.finishedAt) {
+        root.finishedAt = null;
+        root.state = 'active';
+        root.activity = null;
+      }
+      root.buildingId = s.buildingId;
       if (!existed) feedPush(world, evt, `${sessionLabel(world, evt)} · session started`);
       break;
     }
@@ -315,7 +342,10 @@ export function reduce(world, evt) {
             for (const a of world.agents.values()) {
               if (a.buildingId === b.id) a.buildingId = other.id;
             }
-            world.buildings.delete(b.id);
+            for (const att of world.attention.values()) {
+              if (att.buildingId === b.id) att.buildingId = other.id;
+            }
+            removeBuilding(world, b); // frees the tent's plot
             s.buildingId = other.id;
             feedPush(world, evt, `${name} · building reopened`);
             return true;
@@ -388,7 +418,8 @@ export function reduce(world, evt) {
       if (s.live) s.status = 'working';
       const b = touchBuilding(world, s, evt.at);
       if (b && !b.attention && b.sessionId === s.id) b.state = 'working';
-      feedPush(world, evt, `${sessionLabel(world, evt)} · ${a.isRoot ? 'lead' : a.agentType} ${a.activity.label.toLowerCase()}`);
+      const verb = a.activity.label.charAt(0).toLowerCase() + a.activity.label.slice(1);
+      feedPush(world, evt, `${sessionLabel(world, evt)} · ${a.isRoot ? 'foreman' : a.agentType} ${verb}`);
       break;
     }
     case 'activity.ended': {
@@ -413,7 +444,18 @@ export function reduce(world, evt) {
       const kind = ['permission', 'input', 'question'].includes(d.kind) ? d.kind : 'input';
       const agentKey = evt.agent ? evt.session + ':' + evt.agent : null;
       const id = 'att-' + shortId(evt.session + ':' + (evt.agent || 'root') + ':' + kind);
-      if (world.attention.has(id)) return false;
+      const prior = world.attention.get(id);
+      if (prior) {
+        // A fresh request supersedes the stale one — update, never ignore.
+        const summary = String(d.summary || 'Needs your attention').slice(0, 120);
+        if (prior.summary === summary) return false;
+        prior.summary = summary;
+        prior.since = evt.at;
+        const sb = world.buildings.get(prior.buildingId);
+        if (sb && sb.attention) { sb.attention.summary = summary; sb.attention.since = evt.at; }
+        feedPush(world, evt, `${sessionLabel(world, evt)} · needs you: ${summary}`);
+        break;
+      }
       const att = {
         id,
         sessionId: s.id,
@@ -464,7 +506,7 @@ export function reduce(world, evt) {
       if (root && !root.finishedAt) { root.activity = null; root.state = 'active'; }
       const b = getBuilding(world, s);
       if (b && b.sessionId === s.id && !b.attention) b.state = 'idle';
-      world.recentDone.push(evt.at);
+      // A finished turn is idle, not "done" — only real completions count.
       feedPush(world, evt, `${sessionLabel(world, evt)} · turn finished`);
       break;
     }
@@ -494,8 +536,22 @@ export function sweep(world, now = Date.now()) {
   for (const [id, att] of world.attention) {
     if (now - att.since > ATTENTION_EXPIRE_MS) {
       world.attention.delete(id);
-      const b = world.buildings.get(att.buildingId);
+      const s = world.sessions.get(att.sessionId);
+      const b = (s && s.buildingId && world.buildings.get(s.buildingId)) || world.buildings.get(att.buildingId);
       if (b) { b.attention = null; if (b.state === 'attention') b.state = 'idle'; }
+      const a = world.agents.get(att.agentId);
+      if (a && a.state === 'attention' && !a.finishedAt) a.state = 'active';
+      changed = true;
+    }
+  }
+  // GC: ended sessions and their agents eventually leave the world entirely.
+  const GC_MS = 60 * 60 * 1000;
+  for (const [id, s] of world.sessions) {
+    if (!s.live && s.endedAt && now - s.endedAt > GC_MS) {
+      world.sessions.delete(id);
+      for (const [k, a] of world.agents) {
+        if (a.sessionId === id) world.agents.delete(k);
+      }
       changed = true;
     }
   }
@@ -515,7 +571,8 @@ export function snapshot(world, now = Date.now()) {
   for (const s of world.sessions.values()) {
     if (!s.live) continue;
     if (s.status === 'working') working++;
-    else waiting++;
+    else if (s.status === 'idle') waiting++;
+    // 'blocked' sessions surface through attention, not the idle count
   }
   return {
     seq: world.seq,
@@ -551,22 +608,25 @@ export function snapshot(world, now = Date.now()) {
 // ——— persistence hydration (geography + history survive restarts) ———
 
 export function dehydrate(world) {
+  const permanent = [...world.buildings.values()].filter((b) => b.permanent);
+  const keepDistricts = new Set(permanent.map((b) => b.districtId));
   // Plots held by temporary worksites are freed in the saved copy — those
   // buildings don't survive a restart, so their land shouldn't either.
-  const districts = [...world.districts.values()].map((d) => {
-    const free = [...(d.freePlots || [])];
-    for (const b of world.buildings.values()) {
-      if (b.districtId === d.id && !b.permanent) free.push({ ...b.plot });
-    }
-    free.sort((p, q) => (p.y - q.y) || (p.x - q.x));
-    return { ...d, freePlots: free };
-  });
+  // Districts with nothing permanent in them aren't saved at all.
+  const districts = [...world.districts.values()]
+    .filter((d) => keepDistricts.has(d.id))
+    .map((d) => {
+      const free = [...(d.freePlots || [])];
+      for (const b of world.buildings.values()) {
+        if (b.districtId === d.id && !b.permanent) free.push({ ...b.plot });
+      }
+      free.sort((p, q) => (p.y - q.y) || (p.x - q.x));
+      return { ...d, freePlots: free };
+    });
   return {
     v: 1,
     districts,
-    buildings: [...world.buildings.values()]
-      .filter((b) => b.permanent)
-      .map((b) => ({ ...b, sessionId: null, state: 'closed', attention: null })),
+    buildings: permanent.map((b) => ({ ...b, sessionId: null, state: 'closed', attention: null })),
     sessions: [...world.sessions.values()]
       .filter((s) => s.name && s.nameOrigin === 'explicit')
       .map((s) => ({ id: s.id, project: s.project, name: s.name, nameOrigin: s.nameOrigin, buildingId: s.buildingId })),

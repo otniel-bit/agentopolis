@@ -41,17 +41,23 @@ let offlineTimer = null;
 
 function connect() {
   es = new EventSource('/events');
-  es.addEventListener('world', (e) => {
+  const alive = () => {
     if (offlineTimer) { clearTimeout(offlineTimer); offlineTimer = null; }
     $('offline').hidden = true;
     lastSeen = Date.now();
+  };
+  es.addEventListener('world', (e) => {
+    alive();
     snap = JSON.parse(e.data);
     city.setSnapshot(snap);
     renderSummary();
     renderDrawer();
     renderInspector();
     renderFeed();
+    renderEmptyState();
   });
+  // Server pings every 15s, so a quiet city is provably not a dead one.
+  es.addEventListener('ping', alive);
   es.onerror = () => {
     es.close();
     // a single dropped connection is normal; only alarm after ~12s dark
@@ -63,8 +69,24 @@ function connect() {
 }
 connect();
 setInterval(() => {
-  if (lastSeen && Date.now() - lastSeen > 60000) $('offline').hidden = false;
+  // Two missed pings with a non-open socket = genuinely gone.
+  if (lastSeen && Date.now() - lastSeen > 45000 && es.readyState !== EventSource.OPEN) {
+    $('offline').hidden = false;
+  }
 }, 5000);
+
+function renderEmptyState() {
+  const box = $('empty');
+  if (!box) return;
+  const empty = !snap || snap.districts.length === 0;
+  box.hidden = !empty;
+  if (empty && snap && snap.providerHealth && snap.providerHealth.reconcileError) {
+    $('empty-err').textContent = 'Claude Code not reachable: ' + snap.providerHealth.reconcileError;
+    $('empty-err').hidden = false;
+  } else if (box) {
+    $('empty-err').hidden = true;
+  }
+}
 
 // ——— summary strip ———
 
@@ -197,7 +219,6 @@ function renderInspector() {
       row('doing', a.activity.label);
       if (a.activity.target) row('target', a.activity.target);
       row('for', ago(a.activity.startedAt));
-      row('rule', a.activity.ruleId || '—');
     }
     row('on shift', ago(a.spawnedAt));
     if (a.finishedAt) row('clocked out', ago(a.finishedAt));

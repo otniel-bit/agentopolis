@@ -13,11 +13,11 @@
 <header id="topbar">
   <div id="logo">AGENTOPOLIS</div>
   <div id="summary" role="status" aria-live="polite">
-    <button class="stat" id="stat-working" title="Sessions actively working"><span class="dot dot-work"></span><b>0</b> working</button>
-    <button class="stat" id="stat-waiting" title="Sessions idle, ready for a prompt"><span class="dot dot-idle"></span><b>0</b> idle</button>
+    <span class="stat stat-static" id="stat-working" title="Sessions actively working"><span class="dot dot-work"></span><b>0</b> working</span>
+    <span class="stat stat-static" id="stat-waiting" title="Sessions idle, ready for a prompt"><span class="dot dot-idle"></span><b>0</b> idle</span>
     <button class="stat attn" id="stat-needsyou" title="Open attention requests"><span class="dot dot-attn"></span><b>0</b> need you</button>
-    <button class="stat" id="stat-failed" title="Recent failures"><span class="dot dot-fail"></span><b>0</b> failed</button>
-    <button class="stat" id="stat-done" title="Completed in the last 5 minutes"><span class="dot dot-done"></span><b>0</b> done</button>
+    <span class="stat stat-static" id="stat-failed" title="Failures in the last 5 minutes"><span class="dot dot-fail"></span><b>0</b> failed</span>
+    <span class="stat stat-static" id="stat-done" title="Workers and tasks completed in the last 5 minutes"><span class="dot dot-done"></span><b>0</b> done</span>
   </div>
   <div id="topbar-right">
     <input id="search" type="search" placeholder="/ search the city" aria-label="Search buildings">
@@ -49,6 +49,14 @@
   <div class="offline-card">
     <b>City lost contact with its server.</b>
     <span class="dim">Run <code>npx agentopolis</code> to bring it back — reconnecting…</span>
+  </div>
+</div>
+
+<div id="empty" hidden>
+  <div class="empty-card">
+    <b>The city is waiting for its first session.</b>
+    <span class="dim">Start Claude Code in any project — or tour a synthetic swarm with <code>npx agentopolis --demo</code></span>
+    <span id="empty-err" class="dim" hidden></span>
   </div>
 </div>
 

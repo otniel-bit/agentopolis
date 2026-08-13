@@ -28,7 +28,8 @@ function attentionSummary(p) {
   return `Wants to use ${tool}`;
 }
 
-// Notification payloads vary; sniff conservatively and ignore what we can't read.
+// Notification payloads vary; sniff conservatively over the REDACTED fields
+// only — the adapter never reads the raw payload.
 function classifyNotification(p) {
   const hint = [p.notification_type, p.matcher, p.message, p.title]
     .filter((x) => typeof x === 'string').join(' ').toLowerCase();
@@ -44,8 +45,11 @@ function classifyNotification(p) {
 // Returns 0..n protocol events for one native hook payload.
 export function normalize(raw) {
   const events = buildEvents(raw);
-  // Spooled payloads carry the time the bridge saw them; keep it for ordering.
-  const ts = raw && typeof raw.__agentopolis_ts === 'number' ? raw.__agentopolis_ts : null;
+  // Spooled payloads carry the time the bridge saw them; keep it for ordering
+  // — but never trust a timestamp from the future or the distant past.
+  const now = Date.now();
+  let ts = raw && typeof raw.__agentopolis_ts === 'number' ? raw.__agentopolis_ts : null;
+  if (ts && (ts > now + 60000 || ts < now - 7 * 86400000)) ts = null;
   if (ts) for (const e of events) e.at = ts;
   return events;
 }
@@ -56,19 +60,24 @@ function buildEvents(raw) {
 
   switch (p.hook_event_name) {
     case 'SessionStart':
-      return [evt('session.started', p, { data: { source: raw?.source || 'unknown' } })];
+      return [evt('session.started', p, { data: { source: p.source || 'unknown' } })];
 
     case 'SessionEnd':
-      return [evt('session.ended', p, { data: { reason: typeof raw?.reason === 'string' ? raw.reason.slice(0, 40) : undefined } })];
+      return [evt('session.ended', p, { data: { reason: p.reason } })];
 
     case 'PreToolUse': {
       const c = classify(p.tool_name, p.tool_input);
-      return [evt('activity.started', p, {
-        data: {
-          kind: c.kind, label: c.label, target: c.target,
-          tool: p.tool_name, toolUseId: p.tool_use_id, ruleId: c.ruleId,
-        },
-      })];
+      // A tool actually running proves any pending permission gate was
+      // granted — clear attention so the beacon tells the truth.
+      return [
+        evt('attention.cleared', p),
+        evt('activity.started', p, {
+          data: {
+            kind: c.kind, label: c.label, target: c.target,
+            tool: p.tool_name, toolUseId: p.tool_use_id, ruleId: c.ruleId,
+          },
+        }),
+      ];
     }
 
     case 'PostToolUse':
@@ -86,7 +95,7 @@ function buildEvents(raw) {
       return [evt('attention.cleared', p)];
 
     case 'Notification': {
-      const n = classifyNotification(raw || {});
+      const n = classifyNotification(p);
       if (!n) return [];
       return [evt('attention.raised', p, { data: n })];
     }

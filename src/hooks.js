@@ -55,9 +55,13 @@ function readSettings(settingsPath) {
 }
 
 // tmp file lives next to the target so rename stays on one filesystem (atomic).
+// The original file's permissions are preserved — settings.json can hold
+// secrets, and a rename must never silently widen 0600 to the umask default.
 function writeAtomic(settingsPath, settings) {
+  let mode = 0o600;
+  try { mode = fs.statSync(settingsPath).mode & 0o777; } catch { /* new file → 0600 */ }
   const tmpPath = `${settingsPath}.agentopolis-tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(tmpPath, JSON.stringify(settings, null, 2) + "\n");
+  fs.writeFileSync(tmpPath, JSON.stringify(settings, null, 2) + "\n", { mode });
   fs.renameSync(tmpPath, settingsPath);
 }
 

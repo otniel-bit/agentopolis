@@ -106,7 +106,7 @@
       </div>
       <div class="privacy-item">
         <h3>Metadata only</h3>
-        <p>Redaction happens at the edge, in the hook bridge, <em>before anything hits disk</em>. File basenames, not contents. Sanitized command heads (secrets masked, 80-char cap), never full commands. No prompts, no assistant messages, no env values.</p>
+        <p>Redaction happens at the edge, in the hook bridge, <em>before anything hits disk</em>. File names, not contents. Commands truncated to 80 chars with secrets masked. No prompts, no assistant messages, no file bodies — ever.</p>
       </div>
       <div class="privacy-item">
         <h3>Open source</h3>
@@ -128,7 +128,7 @@
     </details>
     <details>
       <summary>What data leaves my machine?</summary>
-      <div class="a">Nothing. The server listens on <code>127.0.0.1</code> only, and there is no telemetry of any kind. What's stored locally is already-redacted metadata: session ids, tool names, file basenames, sanitized command heads. File contents, prompts, and assistant messages never reach the event stream in the first place.</div>
+      <div class="a">Nothing. The server listens on <code>127.0.0.1</code> only, rejects non-loopback requests, and there is no telemetry of any kind. What's stored locally is already-redacted metadata: session ids, tool names, file names, truncated commands with secrets masked. File contents, prompts, and assistant messages never reach the event stream in the first place.</div>
     </details>
     <details>
       <summary>Does it mess with my Claude Code settings?</summary>
