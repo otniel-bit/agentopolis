@@ -519,7 +519,7 @@ export function createCity(canvas, { onSelect } = {}) {
     const tree = treeSprite(seed);
     ctx.drawImage(tree, p0.x + W - 34 * z, p0.y + 4 * z, 27 * z, 36 * z);
     if (ext.w > 220) {
-      ctx.drawImage(treeSprite(seed + 1), p0.x + 6 * z, p0.y + H - 42 * z, 27 * z, 36 * z);
+      ctx.drawImage(treeSprite(seed + 1), p0.x + 30 * z, p0.y + H - 42 * z, 27 * z, 36 * z);
     }
 
     // street lamps flanking the first road, with warm pools
