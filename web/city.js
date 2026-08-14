@@ -3,10 +3,10 @@
 
 import {
   PALETTE, workerSprite, drawProp, buildingSprite, tentSprite, drawStatusIcon,
-  moonSprite, glowSprite, treeSprite, lampSprite,
-  deskAnchors, officeWidth, drawDesk, trailerDeskAnchor, TRAILER_W,
-  FLOOR_H, ROOF_Y, BASE_H, SPRITE_PAD_X, SPRITE_PAD_Y,
+  moonSprite, glowSprite, treeSprite, lampSprite, drawBubble,
 } from './sprites.js';
+
+const YARD = 64; // grass strip below the path where agents visibly work
 
 const BSCALE = 2;                     // buildings drawn at worker scale — cutaway offices
 const PLOT_W = 160, PLOT_H = 200;
@@ -40,6 +40,7 @@ export function createCity(canvas, { onSelect } = {}) {
   const particles = [];
   const hits = [];              // screen-space hit rects, rebuilt per frame
   const plates = [];            // name plates drawn above workers, per frame
+  const bubbles = [];           // speech bubbles, drawn above everything
   const starsFar = Array.from({ length: 140 }, (_, i) => ({
     x: (i * 733) % 1900, y: (i * 401) % 950, p: (i * 97) % 100,
   }));
@@ -56,13 +57,10 @@ export function createCity(canvas, { onSelect } = {}) {
   let origins = new Map();
   let rowH = PLOT_H;
   function computeRowH() {
-    let maxH = 84; // trailer sprite height x scale
-    for (const b of snap.buildings) {
-      if (!b.permanent) continue;
-      const m = metricsFor(b);
-      maxH = Math.max(maxH, (SPRITE_PAD_Y + ROOF_Y + m.floors * FLOOR_H + BASE_H + 4) * BSCALE);
-    }
-    rowH = Math.min(PLOT_H, maxH + 34);
+    // top-down buildings are a constant footprint height; rows are
+    // building + path + a working yard below it
+    const bH = 61 * BSCALE;
+    rowH = Math.min(PLOT_H + 40, bH + YARD + 24);
   }
   function hasBuildings(d) {
     return snap.buildings.some((b) => b.districtId === d.id);
@@ -89,7 +87,7 @@ export function createCity(canvas, { onSelect } = {}) {
           causeways.push({
             x1: prevEdge - 5,
             x2: x + 5,
-            y: y + HEADER + 20 + rowH - 6,
+            y: y + HEADER + 20 + (rowH - YARD) - 4,
           });
         }
         prevEdge = x + e.w;
@@ -123,33 +121,30 @@ export function createCity(canvas, { onSelect } = {}) {
   function metricsFor(b) {
     const crew = (crewMap.get(b.id) || []).length;
     const floors = Math.min(4, Math.max(2, 1 + Math.ceil(crew / 2)));
-    return { floors, W: officeWidth(b.id + b.name) };
+    return { floors };
   }
 
-  // World position of a desk seat (worker feet line).
-  function deskWorld(b, slot) {
+  // Yard choreography: agents work OUTSIDE where you can see them —
+  // Pokémon-style. Spots fan out on the grass below each building's path.
+  const SPOTS = [
+    [-36, 26], [36, 26], [-64, 42], [64, 42], [0, 46],
+    [-18, 32], [18, 32], [-50, 56], [50, 56], [0, 60],
+  ];
+  function yardSpot(b, i) {
     const door = buildingPos(b);
-    if (!b.permanent) {
-      const a = trailerDeskAnchor();
-      const cw = TRAILER_W + 12, ch = 10 + 4 + FLOOR_H + 12;
-      return { x: door.x - cw + a.x * BSCALE, y: door.y + 6 - ch * BSCALE + a.y * BSCALE };
-    }
-    const m = metricsFor(b);
-    const anchors = deskAnchors(m.W, m.floors);
-    const a = anchors[Math.min(slot, anchors.length - 1)];
-    const cw = m.W + SPRITE_PAD_X * 2;
-    const ch = SPRITE_PAD_Y + ROOF_Y + m.floors * FLOOR_H + BASE_H + 4;
-    return { x: door.x - cw + a.x * BSCALE, y: door.y + 6 - ch * BSCALE + a.y * BSCALE };
+    const sp = SPOTS[((i % SPOTS.length) + SPOTS.length) % SPOTS.length];
+    return { x: door.x + sp[0], y: door.y + sp[1] };
   }
-
-  function deskCountFor(b) {
-    if (!b.permanent) return 1;
-    return 1 + (metricsFor(b).floors - 1) * 2;
+  function foremanPost(b) {
+    const door = buildingPos(b);
+    return { x: door.x + 20, y: door.y + 14 };
   }
-
-  // Desk slots alternate walls: 0 and odd slots sit on the left wall
-  // (monitor toward it), even slots mirror on the right.
-  const deskDir = (slot) => (slot === 0 || slot % 2 === 1) ? 1 : -1;
+  const CHAT = {
+    researching: 'hmm…', reading: 'hmm…', editing: 'tak tak tak', creating: 'tak tak',
+    testing: 'run the tests…', building: 'building…', running: 'on it…',
+    version_control: 'commit!', installing: 'installing…', planning: 'so the plan is…',
+    delegating: 'can you take this?', unknown: '…',
+  };
 
   // Districts are drawn only as large as their occupied plots.
   function districtExtent(d) {
@@ -172,7 +167,7 @@ export function createCity(canvas, { onSelect } = {}) {
     const o = districtPos(d);
     return {
       x: o.x + 26 + b.plot.x * PLOT_W + PLOT_W / 2,
-      y: o.y + HEADER + 20 + b.plot.y * rowH + rowH - 12, // door line
+      y: o.y + HEADER + 20 + b.plot.y * rowH + (rowH - YARD) - 8, // door line, yard below
     };
   }
 
@@ -290,48 +285,76 @@ export function createCity(canvas, { onSelect } = {}) {
         if (!a.isRoot) burst(door, 5, ['#cfd6ff']); // puff of arrival
       }
 
-      // pick a destination: your desk if you have one, otherwise outside
-      const spread = 1 + (idx++ % 3);
+      // stage machine: emerge from the door, greet the foreman, work a
+      // yard spot, report back, walk inside. Everything happens in view.
+      idx++;
       const crew = crewMap.get(a.buildingId) || [];
-      const slot = crew.indexOf(a.id);
-      const hasDesk = slot > -1 && slot < deskCountFor(b);
-      w.desk = null;
-      // finished workers linger a beat, then fade out with a puff
-      if (a.finishedAt && !w.leaveAt) w.leaveAt = now + 1400 + (a.seed * 1200);
-      if (a.finishedAt && w.leaveAt && now > w.leaveAt) {
-        if (!w.fadeStart) {
-          w.fadeStart = now;
-          if (!reducedMotion) {
-            for (let i = 0; i < 4; i++) {
-              particles.push({
-                x: w.x + (Math.random() - 0.5) * 10, y: w.y - 6 - Math.random() * 8,
-                vx: (Math.random() - 0.5) * 10, vy: -8 - Math.random() * 6,
-                g: -2, life: 0.8, color: 'rgba(200,205,235,0.6)', size: 2.4,
-              });
-            }
+      const slot = Math.max(0, crew.indexOf(a.id));
+      const post = foremanPost(b);
+      if (!w.stage) {
+        w.stage = a.isRoot ? 'post' : 'emerge';
+        w.stageAt = now;
+      }
+      const arrive = (tx, ty) => { w.tx = tx; w.ty = ty; return Math.hypot(w.x - tx, w.y - ty) < 4; };
+      const say = (text, ms = 1800) => { w.bubble = { text, until: now + ms }; };
+
+      if (a.finishedAt && w.stage !== 'report' && w.stage !== 'leave') {
+        w.stage = 'report'; w.stageAt = now;
+        say(a.state === 'failed' ? 'uh oh…' : 'done!');
+        const rootW = workers.get(a.buildingId ? (a.id.split(':')[0] + ':root') : '');
+        if (rootW && !a.isRoot) rootW.bubble = { text: 'nice ✓', until: now + 1600 };
+      } else if (a.state === 'attention' && w.stage !== 'attention') {
+        w.stage = 'attention'; w.stageAt = now;
+      } else if (a.state !== 'attention' && w.stage === 'attention') {
+        w.stage = a.isRoot ? 'post' : 'work'; w.stageAt = now;
+      }
+
+      switch (w.stage) {
+        case 'post': { // the foreman holds the door-side post
+          arrive(post.x, post.y);
+          if (a.activity && (!w.nextChat || now > w.nextChat)) {
+            w.nextChat = now + 9000 + a.seed * 8000;
+            say(CHAT[a.activity.kind] || '…', 2000);
           }
+          break;
         }
-        if (now - w.fadeStart > 700) w.gone = true;
-      } else if (a.state === 'attention') {
-        w.tx = door.x; w.ty = door.y + 16; // out front on the road, hand up
-      } else if (!a.finishedAt && hasDesk) {
-        const d = deskWorld(b, slot);
-        w.tx = d.x; w.ty = d.y;
-        w.desk = {
-          slot,
-          kind: a.activity && !a.activity.done ? a.activity.kind : 'off',
-          dir: b.permanent ? deskDir(slot) : 1,
-        };
-      } else if (a.activity) {
-        const st = STATIONS[a.activity.kind] || STATIONS.unknown;
-        w.tx = door.x + st[0] + (a.isRoot ? 0 : spread * 8 - 12);
-        w.ty = door.y + st[1] + (a.isRoot ? 0 : (spread % 2) * 9);
-      } else {
-        // idle overflow: gentle wander near the door
-        if (!w.wanderUntil || now > w.wanderUntil) {
-          w.wanderUntil = now + 2600 + Math.random() * 3600;
-          w.tx = door.x + (Math.random() - 0.5) * 60;
-          w.ty = door.y + 14 + Math.random() * 20;
+        case 'emerge': { // step out, walk to the foreman, say hi
+          if (arrive(post.x - 22, post.y + 4) && !w.greeted) {
+            w.greeted = true;
+            say('on it!');
+            const rootW = workers.get(a.id.split(':')[0] + ':root');
+            if (rootW) rootW.bubble = { text: CHAT.delegating, until: now + 1500 };
+          }
+          if (w.greeted && now - w.stageAt > 2600) { w.stage = 'work'; w.stageAt = now; }
+          break;
+        }
+        case 'work': { // visible work at a yard spot
+          const sp = yardSpot(b, slot);
+          arrive(sp.x, sp.y);
+          if (a.activity && (!w.nextChat || now > w.nextChat)) {
+            w.nextChat = now + 8000 + a.seed * 7000;
+            say(CHAT[a.activity.kind] || '…', 2000);
+          }
+          break;
+        }
+        case 'report': { // walk to the foreman with the result
+          if (arrive(post.x - 22, post.y + 4) && now - w.stageAt > 1600) {
+            w.stage = 'leave'; w.stageAt = now;
+          }
+          if (a.isRoot) { w.stage = 'leave'; w.stageAt = now; } // foreman just heads in
+          break;
+        }
+        case 'leave': { // through the door and gone
+          if (arrive(door.x, door.y - 2)) {
+            w.gone = true;
+            if (!reducedMotion) burst({ x: w.x, y: w.y }, 3, ['#cfd6ff']);
+          }
+          break;
+        }
+        case 'attention': { // front and center, hand up
+          arrive(door.x, door.y + 34);
+          w.bubble = { text: '!', until: now + 500 }; // persistent while waiting
+          break;
         }
       }
 
@@ -502,7 +525,7 @@ export function createCity(canvas, { onSelect } = {}) {
 
     // roads between plot rows, with curbs
     for (let r = 0; r < ext.rows; r++) {
-      const y = p0.y + (HEADER + 20 + r * rowH + rowH - 6) * z;
+      const y = p0.y + (HEADER + 20 + r * rowH + (rowH - YARD) - 4) * z;
       if (y > p0.y + H - 6 * z) break;
       ctx.fillStyle = 'rgba(0,0,0,0.18)';
       ctx.fillRect(p0.x + 6 * z, y - 1 * z, W - 12 * z, 9 * z);
@@ -523,7 +546,7 @@ export function createCity(canvas, { onSelect } = {}) {
     }
 
     // street lamps flanking the first road, with warm pools
-    const lampY = p0.y + (HEADER + 20 + rowH - 6) * z;
+    const lampY = p0.y + (HEADER + 20 + (rowH - YARD) - 4) * z;
     const glow = glowSprite();
     for (const lx of [p0.x + 12 * z, p0.x + W - 16 * z]) {
       ctx.globalAlpha = 0.22;
@@ -594,22 +617,13 @@ export function createCity(canvas, { onSelect } = {}) {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(sprite, x, y, sw, sh * yScale);
 
-    // unstaffed desks: an office has furniture even when nobody's home
-    if (yScale === 1) {
-      const crewLen = (crewMap.get(b.id) || []).length;
-      if (b.permanent) {
-        const m = metricsFor(b);
-        const anchors = deskAnchors(m.W, m.floors);
-        for (let s = crewLen; s < anchors.length; s++) {
-          const dw = deskWorld(b, s);
-          const ds = toScreen(dw.x, dw.y);
-          drawDesk(ctx, 'off', ds.x, ds.y, t, 1.5 * z, deskDir(s));
-        }
-      } else if (crewLen === 0) {
-        const dw = deskWorld(b, 0);
-        const ds = toScreen(dw.x, dw.y);
-        drawDesk(ctx, 'off', ds.x, ds.y, t, 1.5 * z, 1);
-      }
+    // chimney smoke while the office works — the Pokémon tell for "occupied"
+    if (b.state === 'working' && !reducedMotion && Math.random() < 0.012) {
+      particles.push({
+        x: door.x / 1 + (sw / (2 * z)) * 0.28, y: (door.y + 6 - sh / z) + 4,
+        vx: (Math.random() - 0.5) * 4, vy: -9 - Math.random() * 5,
+        g: -3, life: 2.2, color: 'rgba(190,195,220,0.5)', size: 2.6,
+      });
     }
 
     // state flash overlay
@@ -665,8 +679,7 @@ export function createCity(canvas, { onSelect } = {}) {
     if (!w) return;
     const z = cam.zoom;
     const p = toScreen(w.x, w.y);
-    const seated = !!(w.desk && !w.moving);
-    const scale = (seated ? 1.8 : 2) * z;
+    const scale = 2 * z;
 
     let pose = 'idle', frame = Math.floor(t / 480) % 2;
     if (a.state === 'attention') {
@@ -677,34 +690,41 @@ export function createCity(canvas, { onSelect } = {}) {
       pose = 'work'; frame = Math.floor(t / 260) % 2;
     }
 
-    // shadow (outside only — indoors the floor is the shadow)
-    if (!seated) {
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      ctx.beginPath();
-      ctx.ellipse(p.x, p.y + 15 * z, 7 * z, 2.4 * z, 0, 0, Math.PI * 2);
-      ctx.fill();
+    // facing from velocity, Pokémon-style
+    if (w.moving) {
+      const vdx = w.tx - w.x, vdy = w.ty - w.y;
+      if (Math.abs(vdx) > Math.abs(vdy)) { w.facing = 'side'; w.flip = vdx < 0; }
+      else w.facing = vdy < 0 ? 'up' : 'down';
+    } else {
+      w.facing = 'down'; w.flip = false;
     }
 
-    const spr = workerSprite(a.seed, a.agentType, pose, frame);
-    ctx.imageSmoothingEnabled = false;
-    let fade = a.finishedAt ? Math.max(0.35, 1 - (Date.now() - a.finishedAt) / 240000) : 1;
-    if (w.fadeStart) fade = Math.max(0, 0.9 - (performance.now() - w.fadeStart) / 700);
-    ctx.globalAlpha = fade;
-    const bob = seated ? 0 : Math.sin(w.phase + t / 400) * (reducedMotion ? 0 : 0.8) * z;
-    ctx.drawImage(spr, p.x - 6 * scale, p.y - 8 * scale + bob, 12 * scale, 16 * scale);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + 15 * z, 7 * z, 2.4 * z, 0, 0, Math.PI * 2);
+    ctx.fill();
 
-    if (seated) {
-      // the desk beside the worker: monitor color = what they're doing
-      drawDesk(ctx, w.desk.kind, p.x, p.y + 8 * scale, t, 1.5 * z, w.desk.dir);
-      // keystroke sparks drifting up from the keyboard
-      if (pose === 'work' && !reducedMotion && Math.random() < 0.06) {
-        particles.push({
-          x: w.x - 6 * w.desk.dir + (Math.random() - 0.5) * 4, y: w.y - 6,
-          vx: (Math.random() - 0.5) * 6, vy: -14 - Math.random() * 8,
-          g: 6, life: 0.55, color: 'rgba(235,240,255,0.85)', size: 1.1,
-        });
-      }
-    } else if (pose === 'work' && a.activity) {
+    const spr = workerSprite(a.seed, a.agentType, pose, frame, w.facing);
+    ctx.imageSmoothingEnabled = false;
+    const fade = a.finishedAt ? Math.max(0.35, 1 - (Date.now() - a.finishedAt) / 240000) : 1;
+    ctx.globalAlpha = fade;
+    const bob = Math.sin(w.phase + t / 400) * (reducedMotion ? 0 : 0.8) * z;
+    if (w.flip) {
+      ctx.save();
+      ctx.translate(p.x, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(spr, -6 * scale, p.y - 8 * scale + bob, 12 * scale, 16 * scale);
+      ctx.restore();
+    } else {
+      ctx.drawImage(spr, p.x - 6 * scale, p.y - 8 * scale + bob, 12 * scale, 16 * scale);
+    }
+
+    // speech bubble queued for the overlay pass (drawn above everything)
+    if (w.bubble && (w.bubble.until > performance.now() || w.stage === 'attention')) {
+      bubbles.push({ text: w.bubble.text, x: p.x, y: p.y - 20 * z });
+    }
+
+    if (pose === 'work' && a.activity) {
       // outside worker: activity prop in hand
       ctx.save();
       ctx.translate(p.x + 7 * z, p.y + 2 * z);
@@ -769,6 +789,7 @@ export function createCity(canvas, { onSelect } = {}) {
 
     hits.length = 0;
     plates.length = 0;
+    bubbles.length = 0;
     drawBackground(now);
 
     if (snap) {
@@ -795,6 +816,8 @@ export function createCity(canvas, { onSelect } = {}) {
         ctx.fillStyle = p.permanent ? PALETTE.text : PALETTE.textDim;
         ctx.fillText(name, p.x - tw / 2, p.y + (9 + 8.5) * z);
       }
+      for (const bb of bubbles) drawBubble(ctx, bb.text, bb.x, bb.y, z);
+      bubbles.length = 0;
       drawParticles(dt);
       drawVignette();
     }

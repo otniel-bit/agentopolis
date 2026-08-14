@@ -219,6 +219,47 @@ const WORKER_FRAMES = {
   ],
 };
 
+// Facing-direction variants are derived from the down-facing grids:
+// up = same silhouette, no face; side = drawn profile, left is a mirror.
+const SIDE_FRAMES = [
+  [
+    '....HHHH....',
+    '...HHHHHH...',
+    '..hhhhhhh...',
+    '...SSSSS....',
+    '...SSSES....',
+    '...SSSSS....',
+    '....SSS.....',
+    '...BBBBB....',
+    '..BBBBBBB...',
+    '..BbBBBbB...',
+    '..BBBBBBB...',
+    '...BBBBB....',
+    '...LL.LL....',
+    '..LL...LL...',
+    '..FF...FF...',
+    '............',
+  ],
+  [
+    '....HHHH....',
+    '...HHHHHH...',
+    '..hhhhhhh...',
+    '...SSSSS....',
+    '...SSSES....',
+    '...SSSSS....',
+    '....SSS.....',
+    '...BBBBB....',
+    '..BBBBBBB...',
+    '..BbBBBbB...',
+    '..BBBBBBB...',
+    '....LLL.....',
+    '....LLL.....',
+    '....FFF.....',
+    '............',
+    '............',
+  ],
+];
+
 function shade(hex, f) {
   const n = parseInt(hex.slice(1), 16);
   const r = Math.min(255, Math.max(0, ((n >> 16) & 255) * f | 0));
@@ -236,17 +277,19 @@ function mix(a, b, t) {
 
 const spriteCache = new Map();
 
-// Pre-rendered worker frame for a given seed + agentType. seed picks body
-// color + skin tone; agentType picks hat. Deterministic and cached.
-export function workerSprite(seed, agentType, pose, frame) {
+// Pre-rendered worker frame for a given seed + agentType + facing.
+// seed picks body color + skin tone; agentType picks hat. facing:
+// 'down' | 'up' | 'side' (side faces right; the renderer mirrors for left).
+export function workerSprite(seed, agentType, pose, frame, facing = 'down') {
   const body = BODY_HUES[Math.floor(seed * BODY_HUES.length) % BODY_HUES.length];
   const skins = [PALETTE.skin1, PALETTE.skin2, PALETTE.skin3, PALETTE.skin4];
   const skin = skins[Math.floor(seed * 7919) % skins.length];
   const hat = HAT_BY_TYPE[agentType] ||
     HAT_FALLBACK[Math.floor(seed * 104729) % HAT_FALLBACK.length];
-  const frames = WORKER_FRAMES[pose] || WORKER_FRAMES.idle;
-  const grid = frames[frame % frames.length];
-  const key = `${body}|${skin}|${hat}|${pose}|${frame % frames.length}`;
+  let frames = WORKER_FRAMES[pose] || WORKER_FRAMES.idle;
+  if (facing === 'side' && pose === 'walk') frames = SIDE_FRAMES;
+  let grid = frames[frame % frames.length];
+  const key = `${body}|${skin}|${hat}|${pose}|${frame % frames.length}|${facing}`;
   if (spriteCache.has(key)) return spriteCache.get(key);
 
   const c = document.createElement('canvas');
@@ -258,14 +301,44 @@ export function workerSprite(seed, agentType, pose, frame) {
   };
   for (let y = 0; y < grid.length; y++) {
     for (let x = 0; x < grid[y].length; x++) {
-      const ch = grid[y][x];
+      let ch = grid[y][x];
+      if (facing === 'up' && ch === 'E') ch = 'S'; // no face from behind
       if (ch === '.' || !colors[ch]) continue;
       g.fillStyle = colors[ch];
       g.fillRect(x, y, 1, 1);
     }
   }
+  if (facing === 'up') { // hair/hat back covers more of the head
+    g.fillStyle = shade(hat, 0.85);
+    g.fillRect(3, 3, 6, 2);
+  }
   spriteCache.set(key, c);
   return c;
+}
+
+// Speech bubble with a short glyph or word. Drawn in screen space above a
+// worker's head; text stays legible when zoomed, decorative when tiny.
+export function drawBubble(g, text, x, y, z) {
+  g.save();
+  const fs = Math.max(7, 7.5 * z);
+  g.font = `bold ${fs}px ui-monospace, monospace`;
+  const tw = g.measureText(text).width;
+  const pad = 4 * z;
+  const w = tw + pad * 2, h = fs + pad * 1.2;
+  const bx = x - w / 2, by = y - h - 6 * z;
+  g.fillStyle = 'rgba(248,248,255,0.96)';
+  g.beginPath();
+  g.roundRect(bx, by, w, h, 4 * z);
+  g.fill();
+  g.beginPath(); // tail
+  g.moveTo(x - 2.5 * z, by + h);
+  g.lineTo(x + 2.5 * z, by + h);
+  g.lineTo(x, by + h + 4 * z);
+  g.closePath();
+  g.fill();
+  g.fillStyle = '#23263c';
+  g.fillText(text, bx + pad, by + h - pad * 0.9);
+  g.restore();
 }
 
 // Tiny prop drawn beside a working sprite, one per activity kind.
@@ -453,12 +526,105 @@ export function buildingSprite(seedStr, floors, state, litSalt) {
   for (let i = 0; i < seedStr.length; i++) { h ^= seedStr.charCodeAt(i); h = Math.imul(h, 16777619); }
   const rand = (n) => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 1000) / 1000 * n; };
 
+  // ——— Pokémon-style top-down 3/4: big roof, front facade, door to the path
   const walls = [PALETTE.wallA, PALETTE.wallB, PALETTE.wallC, PALETTE.wallD, PALETTE.wallE];
   const roofs = [PALETTE.roofA, PALETTE.roofB, PALETTE.roofC, PALETTE.roofD, PALETTE.roofE];
   const wall = walls[rand(walls.length) | 0];
   const roof = roofs[rand(roofs.length) | 0];
+  const W = [56, 64, 72][Math.max(0, Math.min(2, floors - 2))]; // crew grows the footprint
+  const roofProp = rand(3) | 0;
+  const ROOF_D = 26, FACADE = 17;
+  const c = document.createElement('canvas');
+  c.width = W + 12;
+  c.height = 12 + ROOF_D + FACADE + 6;
+  const g = c.getContext('2d');
+  const ox = 6, oy = 12;
+  const dim = state === 'closed';
+
+  // roof slab seen from above, ridge highlight, shingle rows
+  g.fillStyle = dim ? shade(roof, 0.55) : roof;
+  g.fillRect(ox - 3, oy, W + 6, ROOF_D);
+  g.fillStyle = shade(roof, dim ? 0.68 : 1.2);
+  g.fillRect(ox - 3, oy, W + 6, 2.4);
+  g.fillStyle = shade(roof, 0.8);
+  for (let ry = 6; ry < ROOF_D; ry += 6) g.fillRect(ox - 3, oy + ry, W + 6, 1.2);
+  // eaves shadow over the facade
+  g.fillStyle = shade(roof, 0.6);
+  g.fillRect(ox - 4, oy + ROOF_D - 2, W + 8, 3.4);
+
+  // chimney + roof furniture
+  g.fillStyle = shade(wall, 0.65);
+  g.fillRect(ox + W - 14, oy + 3, 6, 6);
+  g.fillStyle = shade(wall, 0.45);
+  g.fillRect(ox + W - 14, oy + 3, 6, 1.6);
+  if (roofProp === 0) { // antenna
+    g.fillStyle = '#4a5480';
+    g.fillRect(ox + 8, oy + 4, 1.6, 8);
+    g.fillStyle = dim ? '#5a628c' : PALETTE.fail;
+    g.fillRect(ox + 7.4, oy + 2.4, 2.6, 2.6);
+  } else if (roofProp === 1) { // skylight glows when working
+    g.fillStyle = '#3a3352';
+    g.fillRect(ox + 8, oy + 8, 10, 7);
+    g.fillStyle = (state === 'working' && !dim) ? PALETTE.windowLit : PALETTE.windowDark;
+    g.fillRect(ox + 9, oy + 9, 8, 5);
+  } else { // vent box
+    g.fillStyle = '#9aa0c0';
+    g.fillRect(ox + 8, oy + 7, 8, 5);
+    g.fillStyle = '#6b7396';
+    g.fillRect(ox + 9.4, oy + 8.4, 5.2, 2.2);
+  }
+
+  // front facade with door + flanking windows + hanging sign
+  const fy = oy + ROOF_D;
+  g.fillStyle = dim ? shade(wall, 0.55) : wall;
+  g.fillRect(ox, fy, W, FACADE);
+  g.fillStyle = shade(wall, dim ? 0.6 : 1.1);
+  g.fillRect(ox, fy, W, 1.4);
+  const litChance = state === 'working' ? 0.95 : state === 'attention' ? 0.8
+    : state === 'idle' || state === 'waiting' ? 0.5 : state === 'failed' ? 0.7 : 0.06;
+  let salt = litSalt;
+  const doorX = ox + W / 2 - 6;
+  for (const wx of [ox + 6, ox + W - 15]) { // windows
+    salt = (salt * 1103515245 + 12345) & 0x7fffffff;
+    const lit = (salt / 0x7fffffff) < litChance && !dim;
+    g.fillStyle = PALETTE.frame;
+    g.fillRect(wx - 1, fy + 3, 10, 9);
+    g.fillStyle = lit ? ((salt & 1) ? PALETTE.windowLit : PALETTE.windowLit2) : PALETTE.windowDark;
+    g.fillRect(wx, fy + 4, 8, 7);
+    if (lit) {
+      g.fillStyle = 'rgba(255,217,122,0.3)';
+      g.fillRect(wx - 1, fy + 12, 10, 1.6);
+    }
+  }
+  // door
+  g.fillStyle = PALETTE.doorDark;
+  g.fillRect(doorX - 1, fy + 4, 14, FACADE - 4);
+  g.fillStyle = PALETTE.door;
+  g.fillRect(doorX, fy + 5, 12, FACADE - 5);
+  g.fillStyle = dim ? shade('#8a6a48', 0.6) : '#d8b25e';
+  g.fillRect(doorX + 8.6, fy + 10, 1.8, 1.8);
+  if (!dim) { // door lamp
+    g.fillStyle = PALETTE.windowLit;
+    g.fillRect(doorX - 3.4, fy + 5, 2, 2);
+  }
+  // hanging sign over the door, colored by the roof
+  g.fillStyle = '#5c4430';
+  g.fillRect(doorX + 2, fy - 1, 8, 1.2);
+  g.fillStyle = dim ? shade(roof, 0.5) : shade(roof, 1.1);
+  g.fillRect(doorX + 2.6, fy + 0.2, 6.8, 4);
+
+  // base shadow strip
+  g.fillStyle = 'rgba(0,0,0,0.25)';
+  g.fillRect(ox - 1, fy + FACADE, W + 2, 2.4);
+
+  buildingCache.set(key, c);
+  return c;
+}
+
+// (legacy cutaway body kept out of the build — top-down replaced it)
+function _legacyCutaway(seedStr, floors, state, litSalt, rand, walls, roofs) {
+  const wall = walls[0], roof = roofs[0];
   const W = officeWidth(seedStr);
-  const roofProp = rand(3) | 0;                 // antenna / water tank / AC
   const H = ROOF_Y + floors * FLOOR_H + BASE_H;
   const c = document.createElement('canvas');
   c.width = W + SPRITE_PAD_X * 2;
@@ -609,59 +775,48 @@ export function trailerDeskAnchor() {
 }
 const tentCache = new Map();
 export function tentSprite(state) {
-  const key = 'trailer|' + state;
+  const key = 'kiosk|' + state;
   if (tentCache.has(key)) return tentCache.get(key);
   const c = document.createElement('canvas');
   const W = TRAILER_W;
-  c.width = W + 12; c.height = 10 + 4 + FLOOR_H + 12;
+  c.width = W + 12; c.height = 10 + 16 + 12 + 6;
   const g = c.getContext('2d');
   const ox = 6, oy = 10;
   const dim = state === 'closed';
-  const body = dim ? shade(PALETTE.tent1, 0.55) : PALETTE.tent1;
+  const t1 = dim ? shade(PALETTE.tent1, 0.55) : PALETTE.tent1;
+  const t2 = dim ? shade(PALETTE.tent2, 0.55) : PALETTE.tent2;
 
-  // flag pole
-  g.fillStyle = PALETTE.tentPole; g.fillRect(ox + 2, oy - 8, 1.8, 12);
+  // flag on a pole at the back corner
+  g.fillStyle = PALETTE.tentPole; g.fillRect(ox + 2, oy - 7, 1.8, 9);
   g.fillStyle = dim ? shade(PALETTE.attention, 0.5) : PALETTE.attention;
-  g.fillRect(ox + 3.8, oy - 8, 7, 4);
+  g.fillRect(ox + 3.8, oy - 7, 7, 4);
 
-  // flat roof
-  g.fillStyle = shade(body, 0.75);
-  g.fillRect(ox - 3, oy + 2, W + 6, 3);
-  g.fillStyle = shade(body, 1.1);
-  g.fillRect(ox - 3, oy + 2, W + 6, 1);
+  // striped tarp roof from above
+  for (let ry = 0; ry < 16; ry += 4) {
+    g.fillStyle = (ry / 4) % 2 === 0 ? t1 : t2;
+    g.fillRect(ox - 2, oy + ry, W + 4, 4);
+  }
+  g.fillStyle = shade(t1, 1.2);
+  g.fillRect(ox - 2, oy, W + 4, 1.6);
+  g.fillStyle = shade(t2, 0.7);
+  g.fillRect(ox - 3, oy + 14.4, W + 6, 2.4); // eaves shadow
 
-  // shell walls
-  g.fillStyle = body;
-  g.fillRect(ox - 3, oy + 4, 3, FLOOR_H);
-  g.fillRect(ox + W, oy + 4, 3, FLOOR_H);
-
-  // cutaway room
-  const top = oy + 4;
-  g.fillStyle = dim ? '#262b47' : '#5f4d44';
-  g.fillRect(ox, top, W, FLOOR_H - 2);
-  if (!dim) { g.fillStyle = '#6d594c'; g.fillRect(ox, top, W, 3.4); }
-  g.fillStyle = dim ? '#1d2136' : '#43362f';
-  g.fillRect(ox, top + FLOOR_H - 4, W, 2);
-  // ceiling bulb on a wire
-  g.fillStyle = '#3a3352'; g.fillRect(ox + W / 2, top, 1, 2.4);
-  g.fillStyle = dim ? '#3a4166' : PALETTE.windowLit;
-  g.fillRect(ox + W / 2 - 1, top + 2.4, 3, 2.4);
-  // pinboard on the back wall
-  g.fillStyle = '#5c4430'; g.fillRect(ox + W - 16, top + 3, 9, 6);
-  g.fillStyle = '#e8e6f0'; g.fillRect(ox + W - 15, top + 4, 3, 2);
-  g.fillStyle = '#8fd0ff'; g.fillRect(ox + W - 11, top + 4.6, 3, 2);
-  // door on the right
+  // small facade with a door and one window
+  const fy = oy + 16;
+  g.fillStyle = dim ? shade('#8a6a48', 0.55) : '#8a6a48';
+  g.fillRect(ox, fy, W, 12);
   g.fillStyle = PALETTE.doorDark;
-  g.fillRect(ox + W - 5.4, top + 2, 5.4, FLOOR_H - 4);
+  g.fillRect(ox + W / 2 - 6, fy + 2, 12, 10);
+  g.fillStyle = PALETTE.door;
+  g.fillRect(ox + W / 2 - 5, fy + 3, 10, 9);
+  g.fillStyle = PALETTE.frame;
+  g.fillRect(ox + 5, fy + 3, 9, 7);
+  g.fillStyle = dim ? PALETTE.windowDark : PALETTE.windowLit;
+  g.fillRect(ox + 6, fy + 4, 7, 5);
 
-  // skids + steps
-  g.fillStyle = shade(body, 0.5);
-  g.fillRect(ox - 3, oy + 4 + FLOOR_H, W + 6, 2.4);
-  g.fillStyle = '#3a3352';
-  g.fillRect(ox + 2, oy + 6.4 + FLOOR_H, 5, 2.6);
-  g.fillRect(ox + W - 7, oy + 6.4 + FLOOR_H, 5, 2.6);
-  g.fillStyle = PALETTE.tentPole;
-  g.fillRect(ox + W + 1, oy + 5 + FLOOR_H, 4, 1.8); // step
+  // base shadow
+  g.fillStyle = 'rgba(0,0,0,0.25)';
+  g.fillRect(ox - 1, fy + 12, W + 2, 2.2);
 
   tentCache.set(key, c);
   return c;
