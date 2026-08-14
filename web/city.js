@@ -167,7 +167,7 @@ export function createCity(canvas, { onSelect } = {}) {
     const o = districtPos(d);
     return {
       x: o.x + 26 + b.plot.x * PLOT_W + PLOT_W / 2,
-      y: o.y + HEADER + 20 + b.plot.y * rowH + (rowH - YARD) - 8, // door line, yard below
+      y: o.y + HEADER + 20 + b.plot.y * rowH + (rowH - YARD) - 2, // door line, yard below
     };
   }
 
@@ -357,7 +357,7 @@ export function createCity(canvas, { onSelect } = {}) {
         }
         case 'attention': { // front and center, hand up
           arrive(door.x, door.y + 34);
-          w.bubble = { text: '!', until: now + 500 }; // persistent while waiting
+          w.bubble = { text: 'need you!', until: now + 500 }; // persistent while waiting
           break;
         }
       }
@@ -742,7 +742,7 @@ export function createCity(canvas, { onSelect } = {}) {
     ctx.save();
     ctx.scale(Math.max(1, z), Math.max(1, z));
     const sx = p.x / Math.max(1, z), sy = iy / Math.max(1, z);
-    if (a.state === 'attention') drawStatusIcon(ctx, 'attention', sx, sy, t);
+    if (a.state === 'attention') { /* beacon + bubble carry it */ }
     else if (a.state === 'failed') drawStatusIcon(ctx, 'failed', sx, sy, t);
     else if (a.finishedAt) drawStatusIcon(ctx, 'done', sx, sy, t);
     else if (!a.activity && !w.moving) drawStatusIcon(ctx, 'zzz', sx, sy, t);
