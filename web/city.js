@@ -278,6 +278,9 @@ export function createCity(canvas, { onSelect } = {}) {
       const door = buildingPos(b);
       let w = workers.get(a.id);
       if (!w) {
+        // agents that finished before we ever saw them don't get a ghost
+        // entrance — their completion already counts in the summary
+        if (a.finishedAt) continue;
         w = {
           x: door.x, y: door.y - 4, tx: door.x, ty: door.y,
           phase: (a.seed * 10) % Math.PI, frame: 0, walkT: 0,

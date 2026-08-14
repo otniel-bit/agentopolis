@@ -227,6 +227,13 @@ function shade(hex, f) {
   return `rgb(${r},${g},${b})`;
 }
 
+// Blend two hex colors; t=0 → a, t=1 → b.
+function mix(a, b, t) {
+  const na = parseInt(a.slice(1), 16), nb = parseInt(b.slice(1), 16);
+  const ch = (sh) => Math.round(((na >> sh) & 255) * (1 - t) + ((nb >> sh) & 255) * t);
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+}
+
 const spriteCache = new Map();
 
 // Pre-rendered worker frame for a given seed + agentType. seed picks body
@@ -415,6 +422,13 @@ export function drawDesk(g, kind, cx, feetY, t, scale, dir = 1) {
   g.fillRect(X(3.6), -9.4, 2.4, 2.4);
   g.fillStyle = '#e8e6f0';
   g.fillRect(X(6.8), -8.2, 3.6, 1.2);
+  if (!off) { // steam curling off the coffee
+    const s1 = Math.sin(t / 350 + cx) * 0.8;
+    g.globalAlpha = 0.4 + 0.2 * Math.sin(t / 500 + cx);
+    g.fillStyle = '#cfd6ff';
+    g.fillRect(X(4.2) + s1, -11.4, 0.9, 0.9);
+    g.fillRect(X(4.6) - s1, -13, 0.9, 0.9);
+  }
   g.globalAlpha = 1;
   g.restore();
 }
@@ -500,11 +514,12 @@ export function buildingSprite(seedStr, floors, state, litSalt) {
     salt = (salt * 1103515245 + 12345) & 0x7fffffff;
     const lit = (salt / 0x7fffffff) < litChance;
 
-    // room interior: warm when lit, cold blue when dark
-    g.fillStyle = lit && !dim ? '#5f4d44' : '#262b47';
+    // room interior: warm when lit (tinted by the building's own wall color
+    // so each office has its character), cold blue when dark
+    g.fillStyle = lit && !dim ? mix('#5f4d44', wall, 0.22) : '#262b47';
     g.fillRect(ox, top, W, FLOOR_H - 2);
     if (lit && !dim) { // warm gradient band near the ceiling lamp
-      g.fillStyle = '#6d594c';
+      g.fillStyle = mix('#6d594c', wall, 0.22);
       g.fillRect(ox, top, W, 4);
     }
     // floor strip inside the room
