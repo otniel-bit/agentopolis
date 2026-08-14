@@ -15,16 +15,20 @@ export const PALETTE = {
   skin1: '#f2c9a1', skin2: '#d9a878', skin3: '#a9764f', skin4: '#7d5433',
   attention: '#ffcc33', fail: '#ff5f6b', ok: '#69d58c', beacon: '#ffd97a',
   text: '#e8e6f0', textDim: '#9aa0c0',
+  floor: '#1c1f2e', carpetA: '#2b2f4a', carpetB: '#333a5c', carpetC: '#303448',
+  roomFloor: '#303552', wallLine: '#454b6e', wood: '#5c4430', woodDark: '#4a3626',
 };
 
 const BODY_HUES = ['#4e79c9', '#c95e79', '#4ea86b', '#c98a3e', '#8a63c9', '#3ba8a0', '#b8b04b', '#c96a4e'];
+// Agent type reads from the HEADSET color now — hair stays natural.
 const HAT_BY_TYPE = {
-  root: '#f0d24a',      // the foreman wears the yellow hard hat
+  root: '#f0d24a',
   Explore: '#5bc0eb',
   Plan: '#b678d9',
   'general-purpose': '#e0e0e0',
 };
 const HAT_FALLBACK = ['#ff8f5e', '#7ee081', '#e879b0', '#8fd0ff', '#d0c060'];
+const HAIR = ['#3b2f2a', '#5a4632', '#1f1b26', '#8a6248', '#4a3b52', '#6e6660'];
 
 // 12×16 worker. Chars: . none, H hat, h hat brim, S skin, E eye, B body,
 // b body shade, L leg, F foot. Arms live in the body rows.
@@ -284,7 +288,8 @@ export function workerSprite(seed, agentType, pose, frame, facing = 'down') {
   const body = BODY_HUES[Math.floor(seed * BODY_HUES.length) % BODY_HUES.length];
   const skins = [PALETTE.skin1, PALETTE.skin2, PALETTE.skin3, PALETTE.skin4];
   const skin = skins[Math.floor(seed * 7919) % skins.length];
-  const hat = HAT_BY_TYPE[agentType] ||
+  const hat = HAIR[Math.floor(seed * 6151) % HAIR.length];
+  const headset = HAT_BY_TYPE[agentType] ||
     HAT_FALLBACK[Math.floor(seed * 104729) % HAT_FALLBACK.length];
   let frames = WORKER_FRAMES[pose] || WORKER_FRAMES.idle;
   if (facing === 'side' && pose === 'walk') frames = SIDE_FRAMES;
@@ -308,10 +313,16 @@ export function workerSprite(seed, agentType, pose, frame, facing = 'down') {
       g.fillRect(x, y, 1, 1);
     }
   }
-  if (facing === 'up') { // hair/hat back covers more of the head
+  if (facing === 'up') { // hair covers the head from behind
     g.fillStyle = shade(hat, 0.85);
     g.fillRect(3, 3, 6, 2);
   }
+  // headset: thin band over the hair + ear pads in the agent-type color
+  const hy = grid[0].includes('H') ? 1 : 2; // matches the bob frame offset
+  g.fillStyle = headset;
+  g.fillRect(3, hy + 1.2, 6, 1);
+  g.fillRect(2.4, hy + 2.2, 1.4, 2.6);
+  g.fillRect(8.2, hy + 2.2, 1.4, 2.6);
   spriteCache.set(key, c);
   return c;
 }
@@ -526,96 +537,84 @@ export function buildingSprite(seedStr, floors, state, litSalt) {
   for (let i = 0; i < seedStr.length; i++) { h ^= seedStr.charCodeAt(i); h = Math.imul(h, 16777619); }
   const rand = (n) => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 1000) / 1000 * n; };
 
-  // ——— Pokémon-style top-down 3/4: big roof, front facade, door to the path
-  const walls = [PALETTE.wallA, PALETTE.wallB, PALETTE.wallC, PALETTE.wallD, PALETTE.wallE];
-  const roofs = [PALETTE.roofA, PALETTE.roofB, PALETTE.roofC, PALETTE.roofD, PALETTE.roofE];
-  const wall = walls[rand(walls.length) | 0];
-  const roof = roofs[rand(roofs.length) | 0];
-  const W = [56, 64, 72][Math.max(0, Math.min(2, floors - 2))]; // crew grows the footprint
-  const roofProp = rand(3) | 0;
-  const ROOF_D = 26, FACADE = 17;
+  // ——— floor-plan view: a meeting room seen straight from above ———
+  const accents = [PALETTE.roofA, PALETTE.roofB, PALETTE.roofC, PALETTE.roofD, PALETTE.roofE];
+  const accent = accents[rand(accents.length) | 0];
+  const W = [56, 64, 72][Math.max(0, Math.min(2, floors - 2))]; // crew grows the room
+  const H = 44;
   const c = document.createElement('canvas');
-  c.width = W + 12;
-  c.height = 12 + ROOF_D + FACADE + 6;
+  c.width = W + 10;
+  c.height = H + 10;
   const g = c.getContext('2d');
-  const ox = 6, oy = 12;
+  const ox = 5, oy = 5;
   const dim = state === 'closed';
 
-  // roof slab seen from above, ridge highlight, shingle rows
-  g.fillStyle = dim ? shade(roof, 0.55) : roof;
-  g.fillRect(ox - 3, oy, W + 6, ROOF_D);
-  g.fillStyle = shade(roof, dim ? 0.68 : 1.2);
-  g.fillRect(ox - 3, oy, W + 6, 2.4);
-  g.fillStyle = shade(roof, 0.8);
-  for (let ry = 6; ry < ROOF_D; ry += 6) g.fillRect(ox - 3, oy + ry, W + 6, 1.2);
-  // eaves shadow over the facade
-  g.fillStyle = shade(roof, 0.6);
-  g.fillRect(ox - 4, oy + ROOF_D - 2, W + 8, 3.4);
-
-  // chimney + roof furniture
-  g.fillStyle = shade(wall, 0.65);
-  g.fillRect(ox + W - 14, oy + 3, 6, 6);
-  g.fillStyle = shade(wall, 0.45);
-  g.fillRect(ox + W - 14, oy + 3, 6, 1.6);
-  if (roofProp === 0) { // antenna
-    g.fillStyle = '#4a5480';
-    g.fillRect(ox + 8, oy + 4, 1.6, 8);
-    g.fillStyle = dim ? '#5a628c' : PALETTE.fail;
-    g.fillRect(ox + 7.4, oy + 2.4, 2.6, 2.6);
-  } else if (roofProp === 1) { // skylight glows when working
-    g.fillStyle = '#3a3352';
-    g.fillRect(ox + 8, oy + 8, 10, 7);
-    g.fillStyle = (state === 'working' && !dim) ? PALETTE.windowLit : PALETTE.windowDark;
-    g.fillRect(ox + 9, oy + 9, 8, 5);
-  } else { // vent box
-    g.fillStyle = '#9aa0c0';
-    g.fillRect(ox + 8, oy + 7, 8, 5);
-    g.fillStyle = '#6b7396';
-    g.fillRect(ox + 9.4, oy + 8.4, 5.2, 2.2);
+  // room floor, subtly tinted by the room's accent
+  g.fillStyle = dim ? '#252840' : (state === 'working' || state === 'attention')
+    ? mix('#3d4368', accent, 0.1)
+    : mix('#343a5c', accent, 0.08);
+  g.fillRect(ox, oy, W, H);
+  // floor texture
+  g.fillStyle = 'rgba(255,255,255,0.025)';
+  for (let i = 0; i < 14; i++) {
+    g.fillRect(ox + ((i * 53) % (W - 6)) + 3, oy + ((i * 37) % (H - 6)) + 3, 3, 1.4);
   }
 
-  // front facade with door + flanking windows + hanging sign
-  const fy = oy + ROOF_D;
-  g.fillStyle = dim ? shade(wall, 0.55) : wall;
-  g.fillRect(ox, fy, W, FACADE);
-  g.fillStyle = shade(wall, dim ? 0.6 : 1.1);
-  g.fillRect(ox, fy, W, 1.4);
-  const litChance = state === 'working' ? 0.95 : state === 'attention' ? 0.8
-    : state === 'idle' || state === 'waiting' ? 0.5 : state === 'failed' ? 0.7 : 0.06;
-  let salt = litSalt;
-  const doorX = ox + W / 2 - 6;
-  for (const wx of [ox + 6, ox + W - 15]) { // windows
-    salt = (salt * 1103515245 + 12345) & 0x7fffffff;
-    const lit = (salt / 0x7fffffff) < litChance && !dim;
-    g.fillStyle = PALETTE.frame;
-    g.fillRect(wx - 1, fy + 3, 10, 9);
-    g.fillStyle = lit ? ((salt & 1) ? PALETTE.windowLit : PALETTE.windowLit2) : PALETTE.windowDark;
-    g.fillRect(wx, fy + 4, 8, 7);
-    if (lit) {
-      g.fillStyle = 'rgba(255,217,122,0.3)';
-      g.fillRect(wx - 1, fy + 12, 10, 1.6);
-    }
+  // walls with a door gap on the bottom edge
+  const doorW = 12, doorX = ox + W / 2 - doorW / 2;
+  g.fillStyle = dim ? shade(PALETTE.wallLine, 0.7) : PALETTE.wallLine;
+  g.fillRect(ox - 2, oy - 2, W + 4, 2.6);                     // top
+  g.fillRect(ox - 2, oy - 2, 2.6, H + 4);                     // left
+  g.fillRect(ox + W - 0.6, oy - 2, 2.6, H + 4);               // right
+  g.fillRect(ox - 2, oy + H - 0.6, doorX - ox + 2, 2.6);      // bottom left of door
+  g.fillRect(doorX + doorW, oy + H - 0.6, ox + W - doorX - doorW + 2, 2.6); // bottom right
+  if (dim) { // closed room: door shut
+    g.fillStyle = shade(PALETTE.wood, 0.8);
+    g.fillRect(doorX, oy + H - 1, doorW, 2.6);
+  } else { // door swing hint
+    g.strokeStyle = 'rgba(255,255,255,0.08)';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.arc(doorX, oy + H, doorW * 0.9, -Math.PI / 2, 0);
+    g.stroke();
   }
-  // door
-  g.fillStyle = PALETTE.doorDark;
-  g.fillRect(doorX - 1, fy + 4, 14, FACADE - 4);
-  g.fillStyle = PALETTE.door;
-  g.fillRect(doorX, fy + 5, 12, FACADE - 5);
-  g.fillStyle = dim ? shade('#8a6a48', 0.6) : '#d8b25e';
-  g.fillRect(doorX + 8.6, fy + 10, 1.8, 1.8);
-  if (!dim) { // door lamp
-    g.fillStyle = PALETTE.windowLit;
-    g.fillRect(doorX - 3.4, fy + 5, 2, 2);
-  }
-  // hanging sign over the door, colored by the roof
-  g.fillStyle = '#5c4430';
-  g.fillRect(doorX + 2, fy - 1, 8, 1.2);
-  g.fillStyle = dim ? shade(roof, 0.5) : shade(roof, 1.1);
-  g.fillRect(doorX + 2.6, fy + 0.2, 6.8, 4);
 
-  // base shadow strip
-  g.fillStyle = 'rgba(0,0,0,0.25)';
-  g.fillRect(ox - 1, fy + FACADE, W + 2, 2.4);
+  // whiteboard on the top wall, with scribbles
+  g.fillStyle = '#e8e6f0';
+  g.fillRect(ox + 8, oy + 1.6, 18, 4);
+  g.fillStyle = '#c5586b'; g.fillRect(ox + 10, oy + 2.6, 6, 0.9);
+  g.fillStyle = '#5b8bd9'; g.fillRect(ox + 10, oy + 4, 9, 0.9);
+
+  // conference table with chairs
+  const tw = W * 0.46, th = 12;
+  const tx = ox + W / 2 - tw / 2, ty = oy + H / 2 - th / 2 + 2;
+  g.fillStyle = 'rgba(0,0,0,0.2)';
+  g.fillRect(tx + 1, ty + th, tw, 2);
+  g.fillStyle = dim ? shade(PALETTE.wood, 0.7) : PALETTE.wood;
+  g.beginPath(); g.roundRect(tx, ty, tw, th, 3); g.fill();
+  g.fillStyle = shade(PALETTE.wood, 1.2);
+  g.beginPath(); g.roundRect(tx, ty, tw, 2.4, 3); g.fill();
+  g.fillStyle = '#3a3352';
+  for (const cx of [tx + 4, tx + tw - 8]) { // chairs above + below
+    g.fillRect(cx, ty - 5, 4.5, 3.4);
+    g.fillRect(cx, ty + th + 2, 4.5, 3.4);
+  }
+  if (!dim && (state === 'working' || state === 'attention')) {
+    // a laptop open on the table, screen glinting
+    g.fillStyle = '#23263c';
+    g.fillRect(tx + tw / 2 - 3.4, ty + 3, 7, 5);
+    g.fillStyle = state === 'attention' ? PALETTE.attention : '#8ee6a1';
+    g.fillRect(tx + tw / 2 - 2.6, ty + 3.8, 5.4, 3.4);
+  }
+
+  // corner plant + filing cabinet
+  g.fillStyle = '#c78f4e'; g.fillRect(ox + W - 9, oy + 4, 4, 3.4);
+  g.fillStyle = dim ? shade('#5aa876', 0.6) : '#5aa876';
+  g.fillRect(ox + W - 10, oy + 1.4, 6, 3.4);
+  g.fillStyle = '#4a5480';
+  g.fillRect(ox + 3, oy + H - 10, 6, 7);
+  g.fillStyle = '#5a628c';
+  g.fillRect(ox + 4, oy + H - 8.6, 4, 1); g.fillRect(ox + 4, oy + H - 6, 4, 1);
 
   buildingCache.set(key, c);
   return c;
@@ -775,50 +774,80 @@ export function trailerDeskAnchor() {
 }
 const tentCache = new Map();
 export function tentSprite(state) {
-  const key = 'kiosk|' + state;
+  const key = 'hotdesk|' + state;
   if (tentCache.has(key)) return tentCache.get(key);
   const c = document.createElement('canvas');
-  const W = TRAILER_W;
-  c.width = W + 12; c.height = 10 + 16 + 12 + 6;
+  c.width = 52; c.height = 40;
   const g = c.getContext('2d');
-  const ox = 6, oy = 10;
   const dim = state === 'closed';
-  const t1 = dim ? shade(PALETTE.tent1, 0.55) : PALETTE.tent1;
-  const t2 = dim ? shade(PALETTE.tent2, 0.55) : PALETTE.tent2;
 
-  // flag on a pole at the back corner
-  g.fillStyle = PALETTE.tentPole; g.fillRect(ox + 2, oy - 7, 1.8, 9);
-  g.fillStyle = dim ? shade(PALETTE.attention, 0.5) : PALETTE.attention;
-  g.fillRect(ox + 3.8, oy - 7, 7, 4);
+  // floor mat marking the temporary workspace
+  g.fillStyle = dim ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)';
+  g.beginPath(); g.roundRect(4, 6, 44, 30, 4); g.fill();
 
-  // striped tarp roof from above
-  for (let ry = 0; ry < 16; ry += 4) {
-    g.fillStyle = (ry / 4) % 2 === 0 ? t1 : t2;
-    g.fillRect(ox - 2, oy + ry, W + 4, 4);
-  }
-  g.fillStyle = shade(t1, 1.2);
-  g.fillRect(ox - 2, oy, W + 4, 1.6);
-  g.fillStyle = shade(t2, 0.7);
-  g.fillRect(ox - 3, oy + 14.4, W + 6, 2.4); // eaves shadow
-
-  // small facade with a door and one window
-  const fy = oy + 16;
-  g.fillStyle = dim ? shade('#8a6a48', 0.55) : '#8a6a48';
-  g.fillRect(ox, fy, W, 12);
-  g.fillStyle = PALETTE.doorDark;
-  g.fillRect(ox + W / 2 - 6, fy + 2, 12, 10);
-  g.fillStyle = PALETTE.door;
-  g.fillRect(ox + W / 2 - 5, fy + 3, 10, 9);
-  g.fillStyle = PALETTE.frame;
-  g.fillRect(ox + 5, fy + 3, 9, 7);
+  // desk from above with a monitor on its far edge
+  g.fillStyle = 'rgba(0,0,0,0.2)';
+  g.fillRect(13, 24, 26, 2);
+  g.fillStyle = dim ? shade(PALETTE.wood, 0.7) : PALETTE.wood;
+  g.beginPath(); g.roundRect(12, 12, 28, 12, 2); g.fill();
+  g.fillStyle = shade(PALETTE.wood, 1.2);
+  g.fillRect(12, 12, 28, 2);
+  g.fillStyle = '#23263c';
+  g.fillRect(22, 13.4, 9, 4.6); // monitor (screen faces the chair below)
   g.fillStyle = dim ? PALETTE.windowDark : PALETTE.windowLit;
-  g.fillRect(ox + 6, fy + 4, 7, 5);
-
-  // base shadow
-  g.fillStyle = 'rgba(0,0,0,0.25)';
-  g.fillRect(ox - 1, fy + 12, W + 2, 2.2);
+  g.fillRect(23, 14.2, 7, 3);
+  g.fillStyle = '#e8e6f0'; g.fillRect(33.4, 15, 4, 2.6); // papers
+  g.fillStyle = '#c5586b'; g.fillRect(15, 15, 2.6, 2.6); // mug
+  // chair below the desk
+  g.fillStyle = '#3a3352';
+  g.beginPath(); g.roundRect(23, 27, 6.5, 5.5, 1.5); g.fill();
+  // "temporary" cone marker
+  g.fillStyle = dim ? shade(PALETTE.tent1, 0.6) : PALETTE.tent1;
+  g.beginPath(); g.moveTo(7, 32); g.lineTo(9.4, 26); g.lineTo(11.8, 32); g.closePath(); g.fill();
+  g.fillStyle = '#e8e6f0'; g.fillRect(7.8, 29.4, 3.2, 1.1);
 
   tentCache.set(key, c);
+  return c;
+}
+
+// water cooler — where idle agents drift for a chat
+let coolerCanvas = null;
+export function coolerSprite() {
+  if (coolerCanvas) return coolerCanvas;
+  const c = document.createElement('canvas');
+  c.width = 10; c.height = 16;
+  const g = c.getContext('2d');
+  g.fillStyle = '#dfe3f4';
+  g.fillRect(2, 6, 6, 9);
+  g.fillStyle = '#8fd0ff';
+  g.fillRect(2.6, 1.4, 4.8, 5);
+  g.fillStyle = 'rgba(255,255,255,0.5)';
+  g.fillRect(3.2, 2, 1.4, 3.4);
+  g.fillStyle = '#3a3352';
+  g.fillRect(2, 14.4, 6, 1.6);
+  coolerCanvas = c;
+  return c;
+}
+
+// potted office plant (replaces outdoor trees on the floor plan)
+const plantCache = new Map();
+export function plantSprite(variant) {
+  const key = 'plant' + (variant % 3);
+  if (plantCache.has(key)) return plantCache.get(key);
+  const c = document.createElement('canvas');
+  c.width = 14; c.height = 18;
+  const g = c.getContext('2d');
+  const leaf = ['#5aa876', '#4e9a6c', '#63b381'][variant % 3];
+  g.fillStyle = '#c78f4e';
+  g.fillRect(4, 12, 6, 5);
+  g.fillStyle = shade('#c78f4e', 0.75);
+  g.fillRect(4, 15.4, 6, 1.6);
+  g.fillStyle = leaf;
+  g.beginPath(); g.arc(7, 8, 4.6, 0, Math.PI * 2); g.fill();
+  g.fillStyle = shade(leaf, 1.25);
+  g.beginPath(); g.arc(5.4, 6.4, 2.2, 0, Math.PI * 2); g.fill();
+  g.fillRect(8, 4, 1.6, 3.4);
+  plantCache.set(key, c);
   return c;
 }
 

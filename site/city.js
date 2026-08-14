@@ -3,7 +3,7 @@
 
 import {
   PALETTE, workerSprite, drawProp, buildingSprite, tentSprite, drawStatusIcon,
-  moonSprite, glowSprite, treeSprite, lampSprite, drawBubble,
+  glowSprite, plantSprite, coolerSprite, drawBubble,
 } from './sprites.js';
 
 const YARD = 64; // grass strip below the path where agents visibly work
@@ -59,7 +59,7 @@ export function createCity(canvas, { onSelect } = {}) {
   function computeRowH() {
     // top-down buildings are a constant footprint height; rows are
     // building + path + a working yard below it
-    const bH = 61 * BSCALE;
+    const bH = 54 * BSCALE;
     rowH = Math.min(PLOT_H + 40, bH + YARD + 24);
   }
   function hasBuildings(d) {
@@ -139,6 +139,15 @@ export function createCity(canvas, { onSelect } = {}) {
     const door = buildingPos(b);
     return { x: door.x + 34, y: door.y + 16 };
   }
+  function coolerPos(d) {
+    const o = districtPos(d);
+    const e = districtExtent(d);
+    return { x: o.x + e.w - 26, y: o.y + e.h - 32 };
+  }
+  function coolerForBuilding(b) {
+    const d = snap.districts.find((x) => x.id === b.districtId);
+    return d ? coolerPos(d) : buildingPos(b);
+  }
   const CHAT = {
     researching: 'hmm…', reading: 'hmm…', editing: 'tak tak tak', creating: 'tak tak',
     testing: 'run the tests…', building: 'building…', running: 'on it…',
@@ -211,7 +220,7 @@ export function createCity(canvas, { onSelect } = {}) {
       const was = prevB.get(b.id);
       if (was && !was.permanent && b.permanent) {
         promoAnims.set(b.id, performance.now());
-        burst(buildingPos(b), 26, [PALETTE.attention, PALETTE.ok, '#8fd0ff', '#e879b0']);
+        flashes.set(b.id, { color: PALETTE.ok, until: performance.now() + 1100 });
       }
       if (was && was.state !== 'failed' && b.state === 'failed') {
         flashes.set(b.id, { color: PALETTE.fail, until: performance.now() + 900 });
@@ -310,11 +319,26 @@ export function createCity(canvas, { onSelect } = {}) {
       }
 
       switch (w.stage) {
-        case 'post': { // the foreman holds the door-side post
-          arrive(post.x, post.y);
-          if (a.activity && (!w.nextChat || now > w.nextChat)) {
-            w.nextChat = now + 9000 + a.seed * 8000;
-            say(CHAT[a.activity.kind] || '…', 2000);
+        case 'post': { // the foreman holds the door-side post while working
+          if (a.activity) {
+            if (!b.permanent) {
+              w.faceUp = arrive(door.x + 1, door.y - 2); // at the hot-desk chair
+            } else {
+              w.faceUp = false;
+              arrive(post.x, post.y);
+            }
+            if (!w.nextChat || now > w.nextChat) {
+              w.nextChat = now + 9000 + a.seed * 8000;
+              say(CHAT[a.activity.kind] || '…', 2000);
+            }
+          } else {
+            // idle: coffee at the cooler
+            const cp = coolerForBuilding(b);
+            arrive(cp.x - 10 - (idx % 3) * 9, cp.y + 4);
+            if (!w.nextChat || now > w.nextChat) {
+              w.nextChat = now + 12000 + a.seed * 9000;
+              say('☕', 1800);
+            }
           }
           break;
         }
@@ -332,12 +356,18 @@ export function createCity(canvas, { onSelect } = {}) {
           if (w.greeted && now - w.stageAt > 3400) { w.stage = 'work'; w.stageAt = now; }
           break;
         }
-        case 'work': { // visible work at a yard spot
-          const sp = yardSpot(b, slot);
-          arrive(sp.x, sp.y);
-          if (a.activity && (!w.nextChat || now > w.nextChat)) {
-            w.nextChat = now + 8000 + a.seed * 7000;
-            say(CHAT[a.activity.kind] || '…', 2000);
+        case 'work': { // visible work at an open-floor desk spot
+          if (a.activity) {
+            const sp = yardSpot(b, slot);
+            w.atDeskSpot = arrive(sp.x, sp.y);
+            if (!w.nextChat || now > w.nextChat) {
+              w.nextChat = now + 8000 + a.seed * 7000;
+              say(CHAT[a.activity.kind] || '…', 2000);
+            }
+          } else {
+            w.atDeskSpot = false;
+            const cp = coolerForBuilding(b);
+            arrive(cp.x - 10 - (idx % 3) * 9, cp.y + 4);
           }
           break;
         }
@@ -386,31 +416,20 @@ export function createCity(canvas, { onSelect } = {}) {
 
   function drawBackground(t) {
     const w = canvas.clientWidth, h = canvas.clientHeight;
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, '#12141f');
-    grad.addColorStop(0.45, PALETTE.night1);
-    grad.addColorStop(1, '#1f2440');
-    ctx.fillStyle = grad;
+    ctx.fillStyle = PALETTE.floor;
     ctx.fillRect(0, 0, w, h);
-    // far stars: tiny, everywhere, slow twinkle
-    for (const s of starsFar) {
-      const tw = reducedMotion ? 0.5 : 0.3 + 0.4 * Math.abs(Math.sin(t / 1400 + s.p));
-      ctx.fillStyle = `rgba(205,212,245,${tw * 0.4})`;
-      ctx.fillRect((s.x / 1900) * w, (s.y / 950) * h, 1.2, 1.2);
-    }
-    // near stars: brighter, a few of them cross-shaped
-    for (const s of starsNear) {
-      const tw = reducedMotion ? 0.7 : 0.4 + 0.6 * Math.abs(Math.sin(t / 800 + s.p));
-      const x = (s.x / 1900) * w, y = (s.y / 950) * h;
-      ctx.fillStyle = `rgba(230,236,255,${tw * 0.7})`;
-      ctx.fillRect(x, y, 2, 2);
-      if (s.p % 4 === 0) {
-        ctx.fillStyle = `rgba(230,236,255,${tw * 0.3})`;
-        ctx.fillRect(x - 2, y, 6, 2);
-        ctx.fillRect(x, y - 2, 2, 6);
+    // faint plan grid anchored to world space so it pans with the floor
+    const step = 32 * cam.zoom;
+    if (step > 9) {
+      const offX = ((-cam.x * cam.zoom + w / 2) % step + step) % step;
+      const offY = ((-cam.y * cam.zoom + h / 2) % step + step) % step;
+      ctx.fillStyle = 'rgba(160,170,215,0.05)';
+      for (let x = offX; x < w; x += step) {
+        for (let y = offY; y < h; y += step) {
+          ctx.fillRect(x, y, 1.5, 1.5);
+        }
       }
     }
-    ctx.drawImage(moonSprite(), w - 150, 54, 76, 76);
   }
 
   function drawVignette() {
@@ -432,29 +451,16 @@ export function createCity(canvas, { onSelect } = {}) {
   function drawCauseways() {
     const z = cam.zoom;
     for (const c of causeways) {
-      const a = toScreen(c.x1, c.y);
-      const b = toScreen(c.x2, c.y);
-      // hanging shadow beneath the bridge
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.fillRect(a.x, a.y + 8 * z, b.x - a.x, 3 * z);
-      // planks
-      ctx.fillStyle = '#5c4430';
-      ctx.fillRect(a.x, a.y, b.x - a.x, 8 * z);
-      ctx.fillStyle = '#6f5238';
-      for (let x = a.x; x < b.x - 3 * z; x += 6 * z) {
-        ctx.fillRect(x + 1 * z, a.y + 1 * z, 4 * z, 6 * z);
-      }
-      // rope rails
-      ctx.fillStyle = '#3a3352';
-      ctx.fillRect(a.x, a.y - 1.4 * z, b.x - a.x, 1.4 * z);
-      // midpoint lamp + pool
-      const mx = (a.x + b.x) / 2;
-      const glow = glowSprite();
-      ctx.globalAlpha = 0.2;
-      ctx.drawImage(glow, mx - 22 * z, a.y - 22 * z, 44 * z, 44 * z);
-      ctx.globalAlpha = 1;
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(lampSprite(), mx - 5 * z, a.y - 26 * z, 10 * z, 26 * z);
+      const a = toScreen(c.x1, c.y - 4);
+      const b = toScreen(c.x2, c.y - 4);
+      // corridor floor with wall lines — an office hallway between suites
+      ctx.fillStyle = PALETTE.carpetC;
+      ctx.fillRect(a.x, a.y - 2 * z, b.x - a.x, 15 * z);
+      ctx.fillStyle = PALETTE.wallLine;
+      ctx.fillRect(a.x, a.y - 3.4 * z, b.x - a.x, 1.6 * z);
+      ctx.fillRect(a.x, a.y + 12.6 * z, b.x - a.x, 1.6 * z);
+      ctx.fillStyle = 'rgba(255,255,255,0.04)';
+      ctx.fillRect(a.x, a.y - 1 * z, b.x - a.x, 1 * z);
     }
   }
 
@@ -465,101 +471,59 @@ export function createCity(canvas, { onSelect } = {}) {
     const ext = districtExtent(d);
     const W = ext.w * z, H = ext.h * z;
     const seed = d.id.charCodeAt(2) + d.id.charCodeAt(3);
+    const accents = ['#5b8bd9', '#5aa876', '#c5586b', '#c78f4e', '#8d6fc0'];
+    const accent = accents[seed % accents.length];
 
-    // floating-island underside: earth cliff with stones and a grass lip
-    ctx.fillStyle = '#241d18';
+    // suite drop shadow + carpet, tinted faintly per repo
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath();
-    ctx.moveTo(p0.x - 2 * z, p0.y + H);
-    ctx.lineTo(p0.x + W + 2 * z, p0.y + H);
-    ctx.lineTo(p0.x + W - 14 * z, p0.y + H + 14 * z);
-    ctx.lineTo(p0.x + 14 * z, p0.y + H + 14 * z);
-    ctx.closePath();
+    ctx.roundRect(p0.x - 2 * z, p0.y + 2 * z, W + 8 * z, H + 8 * z, 8 * z);
     ctx.fill();
-    ctx.fillStyle = '#332a22';
+    ctx.fillStyle = PALETTE.carpetA;
     ctx.beginPath();
-    ctx.moveTo(p0.x - 2 * z, p0.y + H);
-    ctx.lineTo(p0.x + W + 2 * z, p0.y + H);
-    ctx.lineTo(p0.x + W - 8 * z, p0.y + H + 7 * z);
-    ctx.lineTo(p0.x + 8 * z, p0.y + H + 7 * z);
-    ctx.closePath();
+    ctx.roundRect(p0.x, p0.y, W, H, 6 * z);
     ctx.fill();
-    ctx.fillStyle = '#4a3d31';
-    for (let i = 0; i < 7; i++) {
-      const sx = ((i * 173 + seed * 37) % (ext.w - 30)) * z;
-      ctx.fillRect(p0.x + 15 * z + sx, p0.y + H + (2 + (i % 3) * 2.4) * z, 3 * z, 2 * z);
+    ctx.fillStyle = `rgba(${parseInt(accent.slice(1, 3), 16)},${parseInt(accent.slice(3, 5), 16)},${parseInt(accent.slice(5, 7), 16)},0.05)`;
+    ctx.beginPath();
+    ctx.roundRect(p0.x, p0.y, W, H, 6 * z);
+    ctx.fill();
+
+    // carpet weave texture
+    ctx.fillStyle = 'rgba(255,255,255,0.025)';
+    for (let i = 0; i < 40; i++) {
+      const gx = ((i * 379 + seed * 131) % (ext.w - 10)) * z;
+      const gy = ((i * 523 + seed * 197) % (ext.h - 10)) * z;
+      ctx.fillRect(p0.x + 5 * z + gx, p0.y + 5 * z + gy, 4 * z, 1.2 * z);
     }
 
-    // ground plate + curb
-    ctx.fillStyle = PALETTE.groundEdge;
+    // suite walls
+    ctx.strokeStyle = PALETTE.wallLine;
+    ctx.lineWidth = 2.4 * z;
     ctx.beginPath();
-    ctx.roundRect(p0.x - 4 * z, p0.y - 4 * z, W + 8 * z, H + 8 * z, 10 * z);
-    ctx.fill();
-    ctx.fillStyle = PALETTE.ground;
-    ctx.beginPath();
-    ctx.roundRect(p0.x, p0.y, W, H, 8 * z);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(143,208,255,0.07)';
-    ctx.lineWidth = 1.5 * z;
-    ctx.beginPath();
-    ctx.roundRect(p0.x + 1.5 * z, p0.y + 1.5 * z, W - 3 * z, H - 3 * z, 7 * z);
+    ctx.roundRect(p0.x + 1.2 * z, p0.y + 1.2 * z, W - 2.4 * z, H - 2.4 * z, 5 * z);
     ctx.stroke();
 
-    // layered grass: dither patches in two greens, then tufts and flowers
-    for (let i = 0; i < 48; i++) {
-      const gx = ((i * 379 + seed * 131) % (ext.w - 8)) * z;
-      const gy = ((i * 523 + seed * 197) % (ext.h - 8)) * z;
-      ctx.fillStyle = i % 2 ? 'rgba(112,190,150,0.09)' : 'rgba(90,160,190,0.07)';
-      ctx.fillRect(p0.x + 4 * z + gx, p0.y + 4 * z + gy, 3 * z, 2 * z);
-    }
-    for (let i = 0; i < 14; i++) { // tufts: three tiny blades
-      const gx = ((i * 761 + seed * 61) % (ext.w - 16)) * z;
-      const gy = ((i * 331 + seed * 89) % (ext.h - 16)) * z;
-      ctx.fillStyle = 'rgba(122,200,160,0.35)';
-      ctx.fillRect(p0.x + 8 * z + gx, p0.y + 8 * z + gy, 1 * z, 3 * z);
-      ctx.fillRect(p0.x + 8 * z + gx + 2 * z, p0.y + 8 * z + gy + 1 * z, 1 * z, 2 * z);
-      ctx.fillRect(p0.x + 8 * z + gx - 2 * z, p0.y + 8 * z + gy + 1 * z, 1 * z, 2 * z);
-    }
-    const flowerColors = ['rgba(255,183,197,0.5)', 'rgba(255,217,122,0.45)', 'rgba(180,190,255,0.5)'];
-    for (let i = 0; i < 8; i++) {
-      const gx = ((i * 449 + seed * 271) % (ext.w - 20)) * z;
-      const gy = ((i * 617 + seed * 113) % (ext.h - 20)) * z;
-      ctx.fillStyle = flowerColors[i % 3];
-      ctx.fillRect(p0.x + 10 * z + gx, p0.y + 10 * z + gy, 2 * z, 2 * z);
-    }
-
-    // roads between plot rows, with curbs
+    // walkway strip where the rooms open onto
     for (let r = 0; r < ext.rows; r++) {
       const y = p0.y + (HEADER + 20 + r * rowH + (rowH - YARD) - 4) * z;
       if (y > p0.y + H - 6 * z) break;
-      ctx.fillStyle = 'rgba(0,0,0,0.18)';
-      ctx.fillRect(p0.x + 6 * z, y - 1 * z, W - 12 * z, 9 * z);
-      ctx.fillStyle = PALETTE.road;
-      ctx.fillRect(p0.x + 8 * z, y, W - 16 * z, 7 * z);
-      ctx.fillStyle = PALETTE.roadLine;
-      for (let x = 0; x < W - 30 * z; x += 18 * z) {
-        ctx.fillRect(p0.x + (14 * z) + x, y + 3 * z, 8 * z, 1 * z);
-      }
+      ctx.fillStyle = PALETTE.carpetB;
+      ctx.fillRect(p0.x + 6 * z, y, W - 12 * z, 9 * z);
+      ctx.fillStyle = 'rgba(255,255,255,0.04)';
+      ctx.fillRect(p0.x + 6 * z, y, W - 12 * z, 1 * z);
     }
 
-    // trees on the margins (deterministic corners)
+    // office plants in the corners + the water cooler
     ctx.imageSmoothingEnabled = false;
-    const tree = treeSprite(seed);
-    ctx.drawImage(tree, p0.x + W - 34 * z, p0.y + 4 * z, 27 * z, 36 * z);
+    ctx.drawImage(plantSprite(seed), p0.x + W - 32 * z, p0.y + 8 * z, 21 * z, 27 * z);
     if (ext.w > 220) {
-      ctx.drawImage(treeSprite(seed + 1), p0.x + 30 * z, p0.y + H - 42 * z, 27 * z, 36 * z);
+      ctx.drawImage(plantSprite(seed + 1), p0.x + 8 * z, p0.y + H - 34 * z, 21 * z, 27 * z);
     }
+    const cool = coolerPos(d);
+    const cp = toScreen(cool.x, cool.y);
+    ctx.drawImage(coolerSprite(), cp.x - 7 * z, cp.y - 22 * z, 15 * z, 24 * z);
 
-    // street lamps flanking the first road, with warm pools
-    const lampY = p0.y + (HEADER + 20 + (rowH - YARD) - 4) * z;
-    const glow = glowSprite();
-    for (const lx of [p0.x + 12 * z, p0.x + W - 16 * z]) {
-      ctx.globalAlpha = 0.22;
-      ctx.drawImage(glow, lx - 18 * z, lampY - 24 * z, 48 * z, 48 * z);
-      ctx.globalAlpha = 1;
-      ctx.drawImage(lampSprite(), lx, lampY - 26 * z, 12 * z, 30 * z);
-    }
-
-    // district label — quieter than before
+    // suite nameplate
     ctx.fillStyle = 'rgba(15,17,30,0.6)';
     const label = d.name.toUpperCase();
     ctx.font = `bold ${Math.max(8, 9 * z)}px ui-monospace, monospace`;
@@ -597,7 +561,7 @@ export function createCity(canvas, { onSelect } = {}) {
     }
 
     const x = door.x - sw / 2;
-    const y = door.y - sh * yScale + 6 * z;
+    const y = door.y - sh * yScale + 12 * z;
 
     // ground shadow — light-handed, it's a hint not a stain
     ctx.fillStyle = 'rgba(0,0,0,0.16)';
@@ -621,14 +585,6 @@ export function createCity(canvas, { onSelect } = {}) {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(sprite, x, y, sw, sh * yScale);
 
-    // chimney smoke while the office works — the Pokémon tell for "occupied"
-    if (b.state === 'working' && !reducedMotion && Math.random() < 0.012) {
-      particles.push({
-        x: door.x / 1 + (sw / (2 * z)) * 0.28, y: (door.y + 6 - sh / z) + 4,
-        vx: (Math.random() - 0.5) * 4, vy: -9 - Math.random() * 5,
-        g: -3, life: 2.2, color: 'rgba(190,195,220,0.5)', size: 2.6,
-      });
-    }
 
     // state flash overlay
     const flash = flashes.get(b.id);
@@ -664,7 +620,7 @@ export function createCity(canvas, { onSelect } = {}) {
     }
 
     // name plate rendered later as a sign over the door
-    plates.push({ x: door.x, y: door.y - 46 * z / z * z - 0, sy: y - 8 * z, name: b.name, permanent: b.permanent });
+    plates.push({ x: door.x, sy: y - 13 * z, name: b.name, permanent: b.permanent });
 
     // selection ring
     if (selectedId === b.id) {
@@ -699,6 +655,8 @@ export function createCity(canvas, { onSelect } = {}) {
       const vdx = w.tx - w.x, vdy = w.ty - w.y;
       if (Math.abs(vdx) > Math.abs(vdy)) { w.facing = 'side'; w.flip = vdx < 0; }
       else w.facing = vdy < 0 ? 'up' : 'down';
+    } else if (w.atDeskSpot || w.faceUp) {
+      w.facing = 'up'; w.flip = false; // face the monitor
     } else {
       w.facing = 'down'; w.flip = false;
     }
@@ -728,8 +686,28 @@ export function createCity(canvas, { onSelect } = {}) {
       bubbles.push({ text: w.bubble.text, x: p.x, y: p.y - 20 * z });
     }
 
-    if (pose === 'work' && a.activity) {
-      // outside worker: activity prop in hand
+    if (pose === 'work' && a.activity && w.atDeskSpot && !w.moving) {
+      // settled at an open-floor desk: face the monitor, screen shows the work
+      const SCREEN = {
+        researching: '#7ec3ff', reading: '#7ec3ff', editing: '#8ee6a1', creating: '#8ee6a1',
+        testing: '#ffd97a', building: '#f0a860', running: '#f0a860',
+        version_control: '#ffb86b', installing: '#c9a9ff', planning: '#e8e6f0',
+        delegating: '#ff9ecf', unknown: '#9aa0c0',
+      };
+      const dy = p.y - 14 * z;
+      ctx.fillStyle = PALETTE.wood;
+      ctx.beginPath(); ctx.roundRect(p.x - 13 * z, dy - 8 * z, 26 * z, 9 * z, 2 * z); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(p.x - 13 * z, dy - 8 * z, 26 * z, 1.6 * z);
+      ctx.fillStyle = '#23263c';
+      ctx.fillRect(p.x - 4.5 * z, dy - 7 * z, 9 * z, 4.6 * z);
+      const col = SCREEN[a.activity.kind] || SCREEN.unknown;
+      ctx.globalAlpha = 0.75 + 0.25 * Math.abs(Math.sin(t / 210));
+      ctx.fillStyle = col;
+      ctx.fillRect(p.x - 3.6 * z, dy - 6.3 * z, 7.2 * z, 3.2 * z);
+      ctx.globalAlpha = 1;
+    } else if (pose === 'work' && a.activity) {
+      // walking with the task in hand
       ctx.save();
       ctx.translate(p.x + 7 * z, p.y + 2 * z);
       ctx.scale(z * 1.4, z * 1.4);
