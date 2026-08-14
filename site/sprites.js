@@ -351,51 +351,93 @@ export function buildingSprite(seedStr, floors, state, litSalt) {
   const roofs = [PALETTE.roofA, PALETTE.roofB, PALETTE.roofC, PALETTE.roofD, PALETTE.roofE];
   const wall = walls[rand(walls.length) | 0];
   const roof = roofs[rand(roofs.length) | 0];
-
-  const W = 44, floorH = 12, base = 6;
+  const W = [36, 44, 52][rand(3) | 0];         // silhouette variety
+  const cols = Math.max(2, Math.floor((W - 8) / 10));
+  const roofProp = rand(3) | 0;                 // antenna / water tank / AC
+  const floorH = 12, base = 6;
   const H = 10 + floors * floorH + base;
   const c = document.createElement('canvas');
-  c.width = W + 8; c.height = H + 6;
+  c.width = W + 12; c.height = H + 14;
   const g = c.getContext('2d');
-  const ox = 4, oy = 4;
+  const ox = 6, oy = 12;
+  const dim = state === 'closed';
 
-  // body + side shade
-  g.fillStyle = state === 'closed' ? shade(wall, 0.55) : wall;
+  // body + side shade + left highlight
+  g.fillStyle = dim ? shade(wall, 0.55) : wall;
   g.fillRect(ox, oy + 8, W, H - 8);
   g.fillStyle = shade(wall, 0.72);
   g.fillRect(ox + W - 6, oy + 8, 6, H - 8);
+  g.fillStyle = shade(wall, dim ? 0.62 : 1.12);
+  g.fillRect(ox, oy + 8, 2, H - 8);
 
-  // roof
-  g.fillStyle = state === 'closed' ? shade(roof, 0.6) : roof;
+  // roof slab with depth
+  g.fillStyle = dim ? shade(roof, 0.6) : roof;
   g.fillRect(ox - 2, oy + 4, W + 4, 6);
-  g.fillStyle = shade(roof, 0.75);
+  g.fillStyle = shade(roof, 0.72);
   g.fillRect(ox - 2, oy + 8, W + 4, 2);
-  // chimney
+  g.fillStyle = shade(roof, dim ? 0.7 : 1.18);
+  g.fillRect(ox - 2, oy + 4, W + 4, 1.4);
+
+  // roof furniture (by seed): antenna / water tank / AC unit — plus chimney
   g.fillStyle = shade(wall, 0.6);
   g.fillRect(ox + W - 12, oy - 2, 5, 8);
+  if (roofProp === 0) { // antenna with blinking-style tip
+    g.fillStyle = '#4a5480';
+    g.fillRect(ox + 6, oy - 8, 1.6, 12);
+    g.fillRect(ox + 3, oy - 5, 8, 1.4);
+    g.fillStyle = dim ? '#5a628c' : PALETTE.fail;
+    g.fillRect(ox + 5.6, oy - 10, 2.4, 2.4);
+  } else if (roofProp === 1) { // water tank
+    g.fillStyle = shade(wall, 0.8);
+    g.fillRect(ox + 5, oy - 5, 9, 9);
+    g.fillStyle = shade(wall, 0.6);
+    g.fillRect(ox + 4, oy - 6, 11, 2);
+    g.fillRect(ox + 6, oy + 3, 1.4, 3); g.fillRect(ox + 11.6, oy + 3, 1.4, 3);
+  } else { // AC unit
+    g.fillStyle = '#9aa0c0';
+    g.fillRect(ox + 6, oy - 1, 8, 5);
+    g.fillStyle = '#6b7396';
+    g.fillRect(ox + 7.5, oy + 0.4, 5, 2.2);
+  }
 
   // windows: lit ratio depends on state
   const litChance = state === 'working' ? 0.85 : state === 'attention' ? 0.7
     : state === 'idle' || state === 'waiting' ? 0.4 : state === 'failed' ? 0.6 : 0.06;
   let salt = litSalt;
+  const winSpan = (W - 8) / cols;
   for (let f = 0; f < floors; f++) {
-    for (let wx = 0; wx < 4; wx++) {
-      const x = ox + 5 + wx * 9, y = oy + 13 + f * floorH;
+    for (let wx = 0; wx < cols; wx++) {
+      const x = ox + 5 + wx * winSpan, y = oy + 13 + f * floorH;
       salt = (salt * 1103515245 + 12345) & 0x7fffffff;
       const lit = (salt / 0x7fffffff) < litChance;
       g.fillStyle = PALETTE.frame;
       g.fillRect(x - 1, y - 1, 7, 9);
       g.fillStyle = lit ? ((salt & 1) ? PALETTE.windowLit : PALETTE.windowLit2) : PALETTE.windowDark;
       g.fillRect(x, y, 5, 7);
+      if (lit) { // sill glow — makes lit windows feel warm, not painted
+        g.fillStyle = 'rgba(255,217,122,0.25)';
+        g.fillRect(x - 1, y + 7, 7, 1.6);
+      }
     }
   }
 
-  // door
+  // door with striped awning + lamp
   const doorX = ox + W / 2 - 4;
+  const doorTop = oy + H - base - 13;
   g.fillStyle = PALETTE.doorDark;
-  g.fillRect(doorX - 1, oy + H - base - 13, 10, 13 + base - 2);
+  g.fillRect(doorX - 1, doorTop, 10, 13 + base - 2);
   g.fillStyle = PALETTE.door;
-  g.fillRect(doorX, oy + H - base - 12, 8, 12 + base - 2);
+  g.fillRect(doorX, doorTop + 1, 8, 12 + base - 2);
+  g.fillStyle = dim ? shade('#8a6a48', 0.6) : '#d8b25e';
+  g.fillRect(doorX + 5.6, doorTop + 7, 1.6, 1.6); // handle
+  for (let a = 0; a < 5; a++) { // awning
+    g.fillStyle = a % 2 === 0 ? (dim ? shade(roof, 0.5) : roof) : '#e8e6f0';
+    g.fillRect(doorX - 3 + a * 3, doorTop - 3, 3, 3);
+  }
+  if (!dim) { // door lamp
+    g.fillStyle = PALETTE.windowLit;
+    g.fillRect(doorX - 4, doorTop + 2, 2, 2);
+  }
 
   // base/foundation
   g.fillStyle = shade(wall, 0.5);
@@ -435,6 +477,85 @@ export function tentSprite(state) {
   for (const x of [2, 10, 42, 50]) g.fillRect(x, 30, 2, 7);
   g.fillRect(2, 32, 10, 1.5); g.fillRect(42, 32, 10, 1.5);
   tentCache.set(key, c);
+  return c;
+}
+
+// ——— world dressing: moon, glow, trees, lamps ———
+
+let moonCanvas = null;
+export function moonSprite() {
+  if (moonCanvas) return moonCanvas;
+  const c = document.createElement('canvas');
+  c.width = 56; c.height = 56;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(28, 28, 10, 28, 28, 28);
+  grad.addColorStop(0, 'rgba(235,238,255,0.28)');
+  grad.addColorStop(1, 'rgba(235,238,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 56, 56);
+  g.fillStyle = '#dfe3f4';
+  g.beginPath(); g.arc(28, 28, 13, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#c3c9e2';
+  for (const [x, y, r] of [[23, 24, 3], [33, 31, 2.2], [29, 20, 1.6], [24, 33, 1.8]]) {
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+  moonCanvas = c;
+  return c;
+}
+
+// One cached warm radial glow, tinted at draw time via globalAlpha.
+let glowCanvas = null;
+export function glowSprite() {
+  if (glowCanvas) return glowCanvas;
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,214,130,0.55)');
+  grad.addColorStop(0.5, 'rgba(255,196,100,0.18)');
+  grad.addColorStop(1, 'rgba(255,196,100,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  glowCanvas = c;
+  return c;
+}
+
+const treeCache = new Map();
+export function treeSprite(variant) {
+  const key = 'tree' + (variant % 3);
+  if (treeCache.has(key)) return treeCache.get(key);
+  const c = document.createElement('canvas');
+  c.width = 18; c.height = 24;
+  const g = c.getContext('2d');
+  const leaf1 = ['#2f6b4f', '#33755a', '#2a5f46'][variant % 3];
+  const leaf2 = shade(leaf1, 1.25);
+  g.fillStyle = '#6b4f35';
+  g.fillRect(8, 16, 3, 7);
+  g.fillStyle = leaf1;
+  g.beginPath(); g.arc(9.5, 10, 7, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(5.5, 13, 4.5, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(13.5, 13, 4.5, 0, Math.PI * 2); g.fill();
+  g.fillStyle = leaf2;
+  g.beginPath(); g.arc(7.5, 8.5, 3, 0, Math.PI * 2); g.fill();
+  g.fillRect(11, 11, 2, 2);
+  treeCache.set(key, c);
+  return c;
+}
+
+let lampCanvas = null;
+export function lampSprite() {
+  if (lampCanvas) return lampCanvas;
+  const c = document.createElement('canvas');
+  c.width = 8; c.height = 20;
+  const g = c.getContext('2d');
+  g.fillStyle = '#3a4166';
+  g.fillRect(3, 4, 2, 15);
+  g.fillRect(1, 18, 6, 2);
+  g.fillStyle = '#2c3152';
+  g.fillRect(1, 1, 6, 5);
+  g.fillStyle = PALETTE.windowLit;
+  g.fillRect(2, 2, 4, 3);
+  lampCanvas = c;
   return c;
 }
 

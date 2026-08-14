@@ -3,6 +3,7 @@
 
 import {
   PALETTE, workerSprite, drawProp, buildingSprite, tentSprite, drawStatusIcon,
+  moonSprite, glowSprite, treeSprite, lampSprite,
 } from './sprites.js';
 
 const PLOT_W = 64, PLOT_H = 58;
@@ -36,9 +37,13 @@ export function createCity(canvas, { onSelect } = {}) {
   const particles = [];
   const hits = [];              // screen-space hit rects, rebuilt per frame
   const plates = [];            // name plates drawn above workers, per frame
-  const stars = Array.from({ length: 90 }, (_, i) => ({
-    x: (i * 733) % 1900, y: (i * 401) % 700, p: (i * 97) % 100,
+  const starsFar = Array.from({ length: 140 }, (_, i) => ({
+    x: (i * 733) % 1900, y: (i * 401) % 950, p: (i * 97) % 100,
   }));
+  const starsNear = Array.from({ length: 26 }, (_, i) => ({
+    x: (i * 947) % 1900, y: (i * 613) % 950, p: (i * 53) % 100,
+  }));
+  let vignette = null, vigW = 0, vigH = 0;
 
   // ——— geometry ———
 
@@ -46,27 +51,41 @@ export function createCity(canvas, { onSelect } = {}) {
   // and each row starts below the tallest district above it. Discovery
   // order (col/row from the server) stays stable, so geography is learnable.
   let origins = new Map();
+  function hasBuildings(d) {
+    return snap.buildings.some((b) => b.districtId === d.id);
+  }
   function relayout() {
     origins = new Map();
     if (!snap) return;
     const rows = new Map();
     for (const d of snap.districts) {
+      if (!hasBuildings(d)) continue; // empty land isn't drawn or reserved
       if (!rows.has(d.row)) rows.set(d.row, []);
       rows.get(d.row).push(d);
     }
+    causeways.length = 0;
     let y = 0;
     for (const row of [...rows.keys()].sort((a, b) => a - b)) {
       const ds = rows.get(row).sort((a, b) => a.col - b.col);
-      let x = 0, tallest = 0;
+      let x = 0, tallest = 0, prevEdge = null;
       for (const d of ds) {
         const e = districtExtent(d);
         origins.set(d.id, { x, y });
+        if (prevEdge !== null) {
+          causeways.push({
+            x1: prevEdge - 5,
+            x2: x + 5,
+            y: y + HEADER + 20 + PLOT_H - 6,
+          });
+        }
+        prevEdge = x + e.w;
         x += e.w + DISTRICT_GAP;
         tallest = Math.max(tallest, e.h);
       }
       y += tallest + DISTRICT_GAP;
     }
   }
+  const causeways = [];
 
   const districtPos = (d) => origins.get(d.id) || { x: 0, y: 0 };
 
@@ -250,14 +269,74 @@ export function createCity(canvas, { onSelect } = {}) {
   function drawBackground(t) {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, PALETTE.night1);
-    grad.addColorStop(1, PALETTE.night2);
+    grad.addColorStop(0, '#12141f');
+    grad.addColorStop(0.45, PALETTE.night1);
+    grad.addColorStop(1, '#1f2440');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
-    for (const s of stars) {
-      const tw = reducedMotion ? 0.6 : 0.35 + 0.5 * Math.abs(Math.sin(t / 900 + s.p));
-      ctx.fillStyle = `rgba(220,225,255,${tw * 0.5})`;
-      ctx.fillRect((s.x / 1900) * w, (s.y / 700) * h * 0.5, 1.6, 1.6);
+    // far stars: tiny, everywhere, slow twinkle
+    for (const s of starsFar) {
+      const tw = reducedMotion ? 0.5 : 0.3 + 0.4 * Math.abs(Math.sin(t / 1400 + s.p));
+      ctx.fillStyle = `rgba(205,212,245,${tw * 0.4})`;
+      ctx.fillRect((s.x / 1900) * w, (s.y / 950) * h, 1.2, 1.2);
+    }
+    // near stars: brighter, a few of them cross-shaped
+    for (const s of starsNear) {
+      const tw = reducedMotion ? 0.7 : 0.4 + 0.6 * Math.abs(Math.sin(t / 800 + s.p));
+      const x = (s.x / 1900) * w, y = (s.y / 950) * h;
+      ctx.fillStyle = `rgba(230,236,255,${tw * 0.7})`;
+      ctx.fillRect(x, y, 2, 2);
+      if (s.p % 4 === 0) {
+        ctx.fillStyle = `rgba(230,236,255,${tw * 0.3})`;
+        ctx.fillRect(x - 2, y, 6, 2);
+        ctx.fillRect(x, y - 2, 2, 6);
+      }
+    }
+    ctx.drawImage(moonSprite(), w - 150, 54, 76, 76);
+  }
+
+  function drawVignette() {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!vignette || vigW !== w || vigH !== h) {
+      vigW = w; vigH = h;
+      vignette = document.createElement('canvas');
+      vignette.width = w; vignette.height = h;
+      const g = vignette.getContext('2d');
+      const grad = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.42, w / 2, h / 2, Math.max(w, h) * 0.75);
+      grad.addColorStop(0, 'rgba(10,11,22,0)');
+      grad.addColorStop(1, 'rgba(10,11,22,0.42)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, w, h);
+    }
+    ctx.drawImage(vignette, 0, 0);
+  }
+
+  function drawCauseways() {
+    const z = cam.zoom;
+    for (const c of causeways) {
+      const a = toScreen(c.x1, c.y);
+      const b = toScreen(c.x2, c.y);
+      // hanging shadow beneath the bridge
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(a.x, a.y + 8 * z, b.x - a.x, 3 * z);
+      // planks
+      ctx.fillStyle = '#5c4430';
+      ctx.fillRect(a.x, a.y, b.x - a.x, 8 * z);
+      ctx.fillStyle = '#6f5238';
+      for (let x = a.x; x < b.x - 3 * z; x += 6 * z) {
+        ctx.fillRect(x + 1 * z, a.y + 1 * z, 4 * z, 6 * z);
+      }
+      // rope rails
+      ctx.fillStyle = '#3a3352';
+      ctx.fillRect(a.x, a.y - 1.4 * z, b.x - a.x, 1.4 * z);
+      // midpoint lamp + pool
+      const mx = (a.x + b.x) / 2;
+      const glow = glowSprite();
+      ctx.globalAlpha = 0.2;
+      ctx.drawImage(glow, mx - 16 * z, a.y - 14 * z, 32 * z, 32 * z);
+      ctx.globalAlpha = 1;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(lampSprite(), mx - 4 * z, a.y - 18 * z, 8 * z, 20 * z);
     }
   }
 
@@ -267,8 +346,32 @@ export function createCity(canvas, { onSelect } = {}) {
     const z = cam.zoom;
     const ext = districtExtent(d);
     const W = ext.w * z, H = ext.h * z;
+    const seed = d.id.charCodeAt(2) + d.id.charCodeAt(3);
 
-    // ground plate
+    // floating-island underside: earth cliff with stones and a grass lip
+    ctx.fillStyle = '#241d18';
+    ctx.beginPath();
+    ctx.moveTo(p0.x - 2 * z, p0.y + H);
+    ctx.lineTo(p0.x + W + 2 * z, p0.y + H);
+    ctx.lineTo(p0.x + W - 14 * z, p0.y + H + 14 * z);
+    ctx.lineTo(p0.x + 14 * z, p0.y + H + 14 * z);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#332a22';
+    ctx.beginPath();
+    ctx.moveTo(p0.x - 2 * z, p0.y + H);
+    ctx.lineTo(p0.x + W + 2 * z, p0.y + H);
+    ctx.lineTo(p0.x + W - 8 * z, p0.y + H + 7 * z);
+    ctx.lineTo(p0.x + 8 * z, p0.y + H + 7 * z);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#4a3d31';
+    for (let i = 0; i < 7; i++) {
+      const sx = ((i * 173 + seed * 37) % (ext.w - 30)) * z;
+      ctx.fillRect(p0.x + 15 * z + sx, p0.y + H + (2 + (i % 3) * 2.4) * z, 3 * z, 2 * z);
+    }
+
+    // ground plate + curb
     ctx.fillStyle = PALETTE.groundEdge;
     ctx.beginPath();
     ctx.roundRect(p0.x - 4 * z, p0.y - 4 * z, W + 8 * z, H + 8 * z, 10 * z);
@@ -277,38 +380,77 @@ export function createCity(canvas, { onSelect } = {}) {
     ctx.beginPath();
     ctx.roundRect(p0.x, p0.y, W, H, 8 * z);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(143,208,255,0.07)';
+    ctx.lineWidth = 1.5 * z;
+    ctx.beginPath();
+    ctx.roundRect(p0.x + 1.5 * z, p0.y + 1.5 * z, W - 3 * z, H - 3 * z, 7 * z);
+    ctx.stroke();
 
-    // grass texture dots (deterministic)
-    ctx.fillStyle = 'rgba(120,200,170,0.06)';
-    for (let i = 0; i < 60; i++) {
-      const gx = ((i * 379 + d.col * 131) % ext.w) * z;
-      const gy = ((i * 523 + d.row * 197) % ext.h) * z;
-      ctx.fillRect(p0.x + gx, p0.y + gy, 2 * z, 1.2 * z);
+    // layered grass: dither patches in two greens, then tufts and flowers
+    for (let i = 0; i < 48; i++) {
+      const gx = ((i * 379 + seed * 131) % (ext.w - 8)) * z;
+      const gy = ((i * 523 + seed * 197) % (ext.h - 8)) * z;
+      ctx.fillStyle = i % 2 ? 'rgba(112,190,150,0.09)' : 'rgba(90,160,190,0.07)';
+      ctx.fillRect(p0.x + 4 * z + gx, p0.y + 4 * z + gy, 3 * z, 2 * z);
+    }
+    for (let i = 0; i < 14; i++) { // tufts: three tiny blades
+      const gx = ((i * 761 + seed * 61) % (ext.w - 16)) * z;
+      const gy = ((i * 331 + seed * 89) % (ext.h - 16)) * z;
+      ctx.fillStyle = 'rgba(122,200,160,0.35)';
+      ctx.fillRect(p0.x + 8 * z + gx, p0.y + 8 * z + gy, 1 * z, 3 * z);
+      ctx.fillRect(p0.x + 8 * z + gx + 2 * z, p0.y + 8 * z + gy + 1 * z, 1 * z, 2 * z);
+      ctx.fillRect(p0.x + 8 * z + gx - 2 * z, p0.y + 8 * z + gy + 1 * z, 1 * z, 2 * z);
+    }
+    const flowerColors = ['rgba(255,183,197,0.5)', 'rgba(255,217,122,0.45)', 'rgba(180,190,255,0.5)'];
+    for (let i = 0; i < 8; i++) {
+      const gx = ((i * 449 + seed * 271) % (ext.w - 20)) * z;
+      const gy = ((i * 617 + seed * 113) % (ext.h - 20)) * z;
+      ctx.fillStyle = flowerColors[i % 3];
+      ctx.fillRect(p0.x + 10 * z + gx, p0.y + 10 * z + gy, 2 * z, 2 * z);
     }
 
-    // roads between plot rows
-    ctx.fillStyle = PALETTE.road;
+    // roads between plot rows, with curbs
     for (let r = 0; r < ext.rows; r++) {
       const y = p0.y + (HEADER + 20 + r * PLOT_H + PLOT_H - 6) * z;
       if (y > p0.y + H - 6 * z) break;
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(p0.x + 6 * z, y - 1 * z, W - 12 * z, 9 * z);
+      ctx.fillStyle = PALETTE.road;
       ctx.fillRect(p0.x + 8 * z, y, W - 16 * z, 7 * z);
       ctx.fillStyle = PALETTE.roadLine;
       for (let x = 0; x < W - 30 * z; x += 18 * z) {
         ctx.fillRect(p0.x + (14 * z) + x, y + 3 * z, 8 * z, 1 * z);
       }
-      ctx.fillStyle = PALETTE.road;
     }
 
-    // district label
-    ctx.fillStyle = 'rgba(15,17,30,0.75)';
+    // trees on the margins (deterministic corners)
+    ctx.imageSmoothingEnabled = false;
+    const tree = treeSprite(seed);
+    ctx.drawImage(tree, p0.x + W - 24 * z, p0.y + 6 * z, 18 * z, 24 * z);
+    if (ext.w > 220) {
+      ctx.drawImage(treeSprite(seed + 1), p0.x + 6 * z, p0.y + H - 30 * z, 18 * z, 24 * z);
+    }
+
+    // street lamps flanking the first road, with warm pools
+    const lampY = p0.y + (HEADER + 20 + PLOT_H - 6) * z;
+    const glow = glowSprite();
+    for (const lx of [p0.x + 12 * z, p0.x + W - 16 * z]) {
+      ctx.globalAlpha = 0.22;
+      ctx.drawImage(glow, lx - 12 * z, lampY - 16 * z, 32 * z, 32 * z);
+      ctx.globalAlpha = 1;
+      ctx.drawImage(lampSprite(), lx, lampY - 16 * z, 8 * z, 20 * z);
+    }
+
+    // district label — quieter than before
+    ctx.fillStyle = 'rgba(15,17,30,0.6)';
     const label = d.name.toUpperCase();
-    ctx.font = `bold ${Math.max(9, 10 * z)}px ui-monospace, monospace`;
+    ctx.font = `bold ${Math.max(8, 9 * z)}px ui-monospace, monospace`;
     const tw = ctx.measureText(label).width;
     ctx.beginPath();
-    ctx.roundRect(p0.x + 10 * z, p0.y + 6 * z, tw + 14 * z, 16 * z, 4 * z);
+    ctx.roundRect(p0.x + 10 * z, p0.y + 5 * z, tw + 12 * z, 14 * z, 4 * z);
     ctx.fill();
     ctx.fillStyle = PALETTE.textDim;
-    ctx.fillText(label, p0.x + 17 * z, p0.y + (6 + 12) * z);
+    ctx.fillText(label, p0.x + 16 * z, p0.y + (5 + 10.5) * z);
   }
 
   function drawBuilding(b, t) {
@@ -345,6 +487,19 @@ export function createCity(canvas, { onSelect } = {}) {
     ctx.beginPath();
     ctx.ellipse(door.x, door.y + 5 * z, sw * 0.46, 5 * z, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    // warm presence glow — the "someone is home" light
+    const pulse = reducedMotion ? 0 : 0.06 * Math.abs(Math.sin(t / 600));
+    const glowAlpha = b.state === 'working' ? 0.2 + pulse
+      : b.state === 'attention' ? 0.3 + pulse * 2
+      : b.state === 'idle' || b.state === 'waiting' ? 0.1
+      : 0;
+    if (glowAlpha > 0) {
+      const gs = Math.max(sw, sh * yScale) * 1.5;
+      ctx.globalAlpha = glowAlpha;
+      ctx.drawImage(glowSprite(), door.x - gs / 2, y + (sh * yScale) / 2 - gs / 2, gs, gs);
+      ctx.globalAlpha = 1;
+    }
 
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(sprite, x, y, sw, sh * yScale);
@@ -494,7 +649,10 @@ export function createCity(canvas, { onSelect } = {}) {
 
     if (snap) {
       syncWorkers(now, dt);
-      for (const d of snap.districts) drawDistrict(d, now);
+      for (const d of snap.districts) {
+        if (origins.has(d.id)) drawDistrict(d, now);
+      }
+      drawCauseways();
       const sortedB = [...snap.buildings].sort((a, b) => buildingPos(a).y - buildingPos(b).y);
       for (const b of sortedB) drawBuilding(b, now);
       const sortedA = [...snap.agents]
@@ -504,16 +662,17 @@ export function createCity(canvas, { onSelect } = {}) {
       const z = cam.zoom;
       for (const p of plates) {
         const name = p.name.length > 22 ? p.name.slice(0, 21) + '…' : p.name;
-        ctx.font = `${Math.max(8, 8.5 * z)}px ui-monospace, monospace`;
+        ctx.font = `${Math.max(7.5, 8 * z)}px ui-monospace, monospace`;
         const tw = ctx.measureText(name).width;
-        ctx.fillStyle = p.permanent ? 'rgba(15,17,30,0.85)' : 'rgba(15,17,30,0.55)';
+        ctx.fillStyle = p.permanent ? 'rgba(15,17,30,0.7)' : 'rgba(15,17,30,0.45)';
         ctx.beginPath();
-        ctx.roundRect(p.x - tw / 2 - 5 * z, p.y + 9 * z, tw + 10 * z, 13 * z, 3 * z);
+        ctx.roundRect(p.x - tw / 2 - 4 * z, p.y + 9 * z, tw + 8 * z, 11.5 * z, 3 * z);
         ctx.fill();
         ctx.fillStyle = p.permanent ? PALETTE.text : PALETTE.textDim;
-        ctx.fillText(name, p.x - tw / 2, p.y + (9 + 9.5) * z);
+        ctx.fillText(name, p.x - tw / 2, p.y + (9 + 8.5) * z);
       }
       drawParticles(dt);
+      drawVignette();
     }
 
     requestAnimationFrame(tick);
