@@ -1,14 +1,17 @@
 # Agentopolis
 
-**Your Claude Code sessions and subagents, live, as a pixel city on localhost.**
+**The office your Claude Code agents clock into.**
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Node >= 18](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 ![Zero dependencies](https://img.shields.io/badge/dependencies-0-blueviolet)
+![Original art](https://img.shields.io/badge/art-original%20%26%20procedural-ff9ecf)
 
 ![Agentopolis](site/og.png)
 
-You run six sessions across three repos and a subagent swarm on top. Terminal tabs don't scale. Agentopolis turns all of it into a city you can read at a glance: which agents are working, what they're actually doing, and — most importantly — which one is standing there with its hand up, waiting for you.
+Your repos get office suites. Named sessions get meeting rooms. Every subagent gets a desk, a headset, and a walk down the hall — and when it finishes, it comes back and tells the foreman. You run six sessions across three repos with a subagent swarm on top; terminal tabs don't scale, but a floor plan does. One glance tells you who's working, what they're actually doing, and which room has someone standing out front with a hand up, waiting for you.
+
+**Two things make it more than a toy.** Nothing on screen is invented: every worker, state, and animation traces to a real Claude Code hook event, and clicking anything shows you the event behind it. And the office only celebrates **outcomes** — a test suite going green, a commit landing — never elapsed time, so a run that spins for twenty minutes and produces nothing doesn't get to look productive.
 
 ## Try it in 10 seconds
 
@@ -30,16 +33,18 @@ Flags: `--port <n>` (default 4114) · `--widget` / `--browser` (choose the face)
 
 ## What you're looking at
 
-| In your terminal | In the city |
+| In your terminal | On the office floor |
 |---|---|
-| A repo (project directory) | A **district** |
-| An unnamed session | A temporary **tent worksite** |
-| An explicitly named session | A permanent **building** — renaming a session promotes its tent, construction animation included |
-| A subagent | A pixel **worker** |
-| What an agent is doing right now | Truthful activity states: *researching, editing, testing, building, running, committing, installing, planning, delegating* — derived from real tool calls, never invented |
-| A session waiting on permission or input | A pulsing **beacon** over the building and a worker with its hand raised |
+| A repo (project directory) | An office **suite**, connected to the others by a hallway |
+| An unnamed session | A **hot desk** on the open floor, cone and all |
+| An explicitly named session | A **meeting room** with its name over the door — naming a session promotes its hot desk |
+| A subagent | A **coworker** with a type-colored headset (yellow = foreman, blue = Explore, purple = Plan) |
+| What an agent is doing right now | Truthful activity states — *researching, editing, testing, building, running, committing, installing, planning, delegating* — derived from real tool calls, never invented |
+| A session waiting on permission or input | A pulsing **beacon** over the room and a coworker out front with a hand up |
+| Tests going green / a commit landing | A green burst and a **✓ tests passed** banner. The only things the office celebrates |
+| An idle agent | Drifts to the **water cooler** with a ☕ — because idle should look idle |
 
-Sessions that end leave their building standing with the lights off. The city persists across restarts (`~/.agentopolis/city.json`), so your districts and buildings keep their places.
+Sessions that end leave their room standing with the lights off. The floor plan persists across restarts (`~/.agentopolis/city.json`), so your suites and rooms keep their places.
 
 ## How it works
 
@@ -108,6 +113,27 @@ The bridge spools redacted payloads to `~/.agentopolis/spool` (bounded at 500). 
 
 **Can I keep an unnamed session as a permanent building?**
 Yes — click its tent and hit **Pin as permanent building** in the inspector. (Renaming the session in Claude Code does the same thing, with more ceremony.)
+
+## Performance
+
+An always-on widget that eats your battery gets uninstalled, so these are measured, not asserted (Apple silicon, `ps` sampling over 20s):
+
+| | CPU | Memory |
+|---|---|---|
+| Server, idle | ~0.5% of one core | 67 MB |
+| Widget, busy office (3 suites, 8 workers) | ~14% of one core | 81 MB |
+| Widget, idle office | ~6–9% of one core | 81 MB |
+| Widget, popover closed | rendering fully paused | — |
+
+Pixel art is stepped animation, so the renderer caps at 20fps while work is happening and 8fps when the office is quiet; static layers (floors, walls, plant pots, the plan grid) are baked once and blitted. `prefers-reduced-motion` is honored, and the 🌿 button toggles a calm mode that removes walking, particles, and celebration bursts while keeping every state readable.
+
+## Honest comparisons
+
+**There is another `agentopolis`.** [CodeBlackwell/agentopolis](https://github.com/CodeBlackwell/agentopolis) is an unrelated Python project (on PyPI) that renders a codebase as an isometric city from git history. Same name, different tool, different registry — this one is the npm package `agentopolis`. No affiliation, and no shade: it got there first on PyPI.
+
+**[Munder Difflin](https://github.com/chaitanyagiri/munder-difflin) is a harness; Agentopolis is a viewer.** It spawns and orchestrates agents for you (Electron, real terminals, an orchestrator, shared memory) and draws an office as one panel of a much larger app. Agentopolis spawns nothing and orchestrates nothing — it watches the sessions you already start, in a menu-bar widget, installed with one command. If you want a team of agents managed for you, use theirs. If you want to *see* what your own agents are doing without adopting a new workflow, use this. They install hooks per-session and we install globally, so **you can run both at once.**
+
+**On art:** every sprite, room, and prop here is drawn procedurally in code — no tilesets, no sprite sheets, no third-party art licenses, nothing to relicense later. The repo contains exactly one image, and it's a screenshot.
 
 ## Roadmap
 

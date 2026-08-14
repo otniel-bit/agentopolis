@@ -10,88 +10,92 @@ no claim in this kit exceeds what the code does.
 
 **Product name:** Agentopolis
 
-Three tagline options, ranked. Constraint: ≤60 chars, lead with the benefit
-(see many agents at a glance), not the pixels.
+**Framing rule (why these changed):** research on this category found that the *same
+product* scored 1, 3, and 1,006 points on Hacker News depending only on how it was
+titled — the 1,006-point version led with the cultural artifact ("Warcraft III Peon
+Voice Notifications for Claude Code") and the 1-point version led with the mechanism
+("a pixel desktop pet that watches your AI coding agents"). So: **lead with the office,
+let the integration be the plumbing.** Never open with "Your AI coding agents,
+visualized as…" — that is measurably the losing pattern.
 
-### #1 (recommended) — "See every AI coding agent at a glance — a living pixel city"
-*59 chars.* Leads with the exact benefit (glanceability across many agents), then earns
-the visual hook as the payoff instead of the pitch. "AI coding agent" is the search
-phrase people actually use; "living" promises real-time without overclaiming.
+### #1 (recommended) — "The office your Claude Code agents clock into"
+*44 chars.* World first, platform named second, zero mechanism words. Reads as a place
+that exists rather than a dashboard that describes. Short enough to survive the PH card
+crop, and it sets up the whole gallery (suites, rooms, desks, the water cooler).
 
-### #2 — "Mission control for Claude Code, as a living pixel city"
-*55 chars.* Category-first: anyone drowning in Claude Code tabs self-selects instantly,
-and it names the integration (good for PH search). Ranked second because "mission
-control" is a crowded metaphor on PH and it narrows the audience to Claude Code users
-on day one, even though that's honest — Claude Code is the only adapter today.
+### #2 — "An office floor where your AI agents actually work"
+*49 chars.* Same world-first shape, and "actually work" quietly does double duty —
+it hints that what you see is real, which is the core differentiator. Slightly vaguer on
+platform, so weaker for PH search.
 
-### #3 — "Your AI coding agents, visualized as a living pixel city"
-*56 chars.* Accurate and pleasant, but it leads with the subject ("your agents") and the
-mechanism ("visualized") rather than the benefit. Keep as fallback if #1 reads too long
-in the PH card preview.
+### #3 — "Your agents have an office now. Watch them work."
+*47 chars.* Most playful, best for X/Twitter. Weakest for PH search because neither
+"Claude Code" nor a category word appears.
+
+**Do not use:** anything starting "See every…", "Mission control for…", or
+"…visualized as…". All three are the low-scoring mechanism-first pattern.
 
 ---
 
 ## 2. Description (≤260 chars)
 
-> Running five Claude Code sessions in five terminals doesn't scale. Agentopolis turns
-> them into a living pixel city on localhost — one glance shows who's working, who's
-> stuck, who needs you. Local-only, zero deps, MIT. Try: npx agentopolis --demo
+> Your repos become office suites. Your named sessions become meeting rooms. Every
+> subagent gets a desk, a headset, and a walk down the hall. Nothing on screen is
+> invented, and it only celebrates green tests — never elapsed time. One command,
+> local-only, MIT.
 
-*(245 chars.)*
+*(258 chars.)*
 
 ---
 
 ## 3. First comment from the maker
 
-> Hey Product Hunt — maker here.
->
-> The origin story is embarrassing in the way most tooling stories are. I had six
-> Claude Code sessions running across three repos — a refactor in one, a test-fixing
-> loop in another, subagents fanning out underneath — and my "dashboard" was
-> cmd-tabbing through terminal windows trying to remember which one had asked for
-> permission twenty minutes ago. Terminals are great at *running* agents. They are
-> terrible at *showing you many of them*.
->
-> So I built the thing my brain apparently wanted: a city.
->
-> `npx agentopolis` starts a tiny zero-dependency Node server on 127.0.0.1 and — with
-> your explicit consent, and a backup of your settings first — adds async, observe-only
-> hooks to Claude Code. Each repo becomes a district. Unnamed sessions pitch tents:
-> temporary worksites. Name a session and the tent gets promoted to a permanent
-> building that rises out of the ground in a burst of confetti. Every agent is a pixel worker, and when a
-> session needs you — a permission prompt, a question — its building lights a beacon
-> and a worker raises a hand. The city persists across restarts.
->
-> The rule I refused to break while building this: **truth before animation**. Every
-> sprite state maps to a real hook event through a deterministic classifier —
-> researching, editing, testing, building, running, version control, installing,
-> planning, delegating. If Agentopolis can't classify a tool call, the worker's
-> state shows "unknown." It never
-> invents busywork, because a dashboard that lies is worse than no dashboard.
->
-> Same rule for privacy: redaction happens at the edge, inside the hook, **before
-> anything touches disk**. No file contents, no prompts, no assistant messages —
-> ever. Commands are sanitized (secrets masked, capped at 80 chars), URLs are reduced
-> to hostnames. The server binds to 127.0.0.1 only; nothing leaves your machine.
-> `npx agentopolis --uninstall` removes the hooks and the bridge, and your local
-> history is one folder (`~/.agentopolis`) you can delete whenever you like.
->
-> You can tour the whole thing without touching your Claude Code config:
->
-> `npx agentopolis --demo`
->
-> That runs a synthetic swarm — three fake projects, a rename-to-building promotion, a
-> permission standoff, one failure and recovery — so you can judge the idea in thirty
-> seconds.
->
-> It's MIT, the event protocol is documented, and the adapter layer is deliberately
-> thin — I'd love to see adapters for other agent CLIs. What I want from you: does the
-> beacon catch your eye fast enough? What's missing from the inspector? What would
-> make this your default way to run a fleet of agents? Brutal feedback welcome.
+Post it within a minute of going live. Voice notes: first person, concrete, no
+marketing register, and it must name the honest limitation before anyone else does.
 
-*(~400 words — within the 300–500 target.)*
-
----
+> I kept six Claude Code sessions open across three repos and lost track of all of them.
+> Not "which one is running" — I could alt-tab for that. I mean *which one had been
+> quietly waiting nineteen minutes for me to approve a command.*
+>
+> So I gave them an office.
+>
+> `npx agentopolis` puts a small pixel office in your menu bar. Each repo you work in
+> becomes a suite. Name a session and it gets a meeting room with its name over the door.
+> Every subagent walks out of that door with a headset on, sits at a desk, and does
+> whatever it's actually doing — reading, editing, testing, committing. When one needs
+> you, it stands out front with its hand up and the room lights a beacon. When one is
+> idle, it goes and stands at the water cooler, because idle should look idle.
+>
+> Two things I cared about more than the pixels:
+>
+> **Nothing on screen is invented.** Every worker, state, and animation traces to a real
+> Claude Code hook event, through a documented event protocol. Click any coworker and you
+> see the event and the classifier rule behind what they're doing. If the floor shows a
+> test running, a test is running.
+>
+> **It only celebrates outcomes.** A green test suite or a landed commit gets the burst
+> and the ✓ banner. Tool calls, token counts, and elapsed time never do — because a
+> swarm of busy little workers is exactly how you convince yourself a twenty-minute run
+> that produced nothing was productive. I didn't want to build that.
+>
+> It's also a spend tracker: it reads the token counts (only the numbers — never content)
+> out of your own Claude Code transcripts and shows what you've spent today, this week,
+> and per model. That part was genuinely unpleasant to look at, which I think means it works.
+>
+> Local-only by architecture: binds to 127.0.0.1, rejects non-loopback requests, no
+> telemetry, metadata-only with redaction before anything touches disk. MIT, zero runtime
+> dependencies, and every sprite is drawn procedurally in code — no tilesets, no
+> third-party art licenses. `npx agentopolis --uninstall` removes every trace, which is
+> enforced by a test.
+>
+> **Honest limitations:** it observes, it doesn't orchestrate — no spawning, no routing,
+> no approving permissions from the office yet. The menu-bar widget is macOS-only right
+> now (everywhere else it opens in a browser). And it's day one, so the art will keep
+> getting better.
+>
+> Try it without touching your Claude settings: `npx agentopolis --demo`.
+> I'd genuinely like to know whether you'd leave it open, or whether it's a nice thing
+> you look at once. That's the whole question for me.
 
 ## 4. Gallery plan — 6 slides
 
@@ -215,10 +219,68 @@ Alternates if a slot is contested: **GitHub**, **Productivity**.
 
 ---
 
+## 7. Objection playbook — prepared answers
+
+These are the criticisms this category actually attracts (from analysis of comparable
+launches). Have the answers ready; do not improvise them at 2am.
+
+**"Gamification of serious work is confusing / this is a toy."**
+> Fair worry, and it's why the office only celebrates two things: tests going green and
+> commits landing. Never elapsed time, never tool calls. A run that spins for twenty
+> minutes and produces nothing looks exactly as unproductive as it was. There's also a
+> calm mode that strips the motion and keeps the states, and the menu-bar summary is
+> readable without ever opening the office.
+
+**"You're paying people in Pokémon for waiting — busy sprites make wasted runs feel good."**
+> This is the sharpest version of the objection and I agree with it, which is why
+> outcomes drive celebration and elapsed time earns nothing. Idle agents visibly go
+> stand at the water cooler. The one loud state is a session that needs you.
+
+**"Isn't this just <other agent visualizer>?"**
+> Most tools in this space are harnesses — they spawn and orchestrate agents for you.
+> Agentopolis spawns nothing and orchestrates nothing; it watches the sessions you
+> already start. One command, no Electron, nothing to adopt. If you want agents managed
+> for you, use a harness — and you can run both at once, since they attach hooks per
+> session and we install globally.
+
+**"Wait, there's already an Agentopolis."**
+> Yes, and it got there first on PyPI — CodeBlackwell/agentopolis, an unrelated Python
+> project that renders a codebase as an isometric city from git history. Different tool,
+> different registry, no affiliation. This one is the npm package.
+
+**"Won't this melt my battery?"**
+> Measured on Apple silicon: server ~0.5% of one core and 67MB; widget ~14% with a busy
+> three-suite office, ~6–9% idle, and zero while the popover is closed. 20fps while work
+> is happening, 8fps when it isn't, static layers baked. Numbers are in the README so you
+> can hold me to them.
+
+**"Does it slow Claude Code down / touch my config?"**
+> Hooks are async and observe-only with a 10s ceiling — they never block a tool call or a
+> prompt. Install asks first, backs up settings.json, merges non-destructively next to
+> your other tools' hooks, and `--uninstall` provably removes every trace (there's a test
+> asserting the string `.agentopolis` cannot survive anywhere in the file).
+
+**"What about my code / prompts?"**
+> They never enter the pipeline. Redaction happens in the hook bridge before anything
+> touches disk: file names not contents, commands truncated to 80 chars with secrets
+> masked, no prompts, no assistant messages. 127.0.0.1 only, non-loopback requests
+> rejected, zero telemetry.
+
+**"Anthropic/OpenAI will just ship this."**
+> Maybe — OpenAI already ships pet modes in Codex. This is MIT and local; if the platform
+> ships something better I'd rather have built the thing that made the case for it.
+
+**Do not:** argue with anyone, vote-beg, or say "great question". Answer the substance,
+concede the real limitation, move on.
+
 ## Final selections
 
-**Tagline:** See every AI coding agent at a glance — a living pixel city
-
-**Description:** Running five Claude Code sessions in five terminals doesn't scale.
-Agentopolis turns them into a living pixel city on localhost — one glance shows who's
-working, who's stuck, who needs you. Local-only, zero deps, MIT. Try: npx agentopolis --demo
+- **Tagline:** The office your Claude Code agents clock into
+- **Description:** Your repos become office suites. Your named sessions become meeting
+  rooms. Every subagent gets a desk, a headset, and a walk down the hall. Nothing on
+  screen is invented, and it only celebrates green tests — never elapsed time. One
+  command, local-only, MIT.
+- **Show HN title:** An office floor where your Claude Code agents clock in and work
+- **Lead gallery slide:** the widget floating over a code editor, office visible, one
+  room beaconing for attention
+- **Never open with:** "See every…", "Mission control for…", "…visualized as…"
