@@ -16,6 +16,7 @@ import { ensureHome, homeDir, loadCity, saveCity, writePortFile, drainSpool, pru
 import { installHooks, uninstallHooks } from '../src/hooks.js';
 import { startReconciler } from '../src/reconcile.js';
 import { startDemo } from '../src/demo.js';
+import { startUsageTracker } from '../src/usage.js';
 
 const PKG_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VERSION = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8')).version;
@@ -42,6 +43,7 @@ if (args.has('--help') || args.has('-h')) {
   --no-hooks     never touch ~/.claude/settings.json this run
   --yes          install hooks without asking
   --no-log       don't write the local event history log
+  --no-usage     don't read token-usage totals from Claude Code transcripts
 
   Everything stays on your machine: 127.0.0.1 only, metadata only.
 `);
@@ -213,6 +215,9 @@ async function main() {
     }
   }
 
+  // Usage accounting reads only token counts from Claude Code's transcripts.
+  const usage = args.has('--no-usage') ? null : startUsageTracker();
+
   let demo = null;
   let reconciler = null;
   if (args.has('--demo')) {
@@ -228,6 +233,7 @@ async function main() {
   const shutdown = () => {
     if (demo) demo.stop();
     if (reconciler) reconciler.stop();
+    if (usage) usage.stop();
     if (!demoMode) saveCity(world, { immediate: true });
     process.exit(0);
   };

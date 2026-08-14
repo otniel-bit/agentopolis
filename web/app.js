@@ -167,6 +167,11 @@ function renderInspector() {
     const dd = el('dd'); dd.append(badge(b.state)); dl.append(dd);
     row('last active', b.lastActiveAt ? ago(b.lastActiveAt) : '—');
     if (b.sessionId) row('session', b.sessionId.slice(0, 12) + '…');
+    const cost = sessionCost(b.sessionId);
+    if (cost) {
+      row('spend', `${money(cost.cost)} · ${cost.modelLabel}`);
+      row('tokens', `${compactTokens(cost.output)} out · ${compactTokens(cost.cacheRead)} cached`);
+    }
     body.append(dl);
 
     if (b.attention) {
@@ -260,10 +265,125 @@ function renderFeed() {
   box.replaceChildren(...items.map((f) => el('div', null, f.label)));
 }
 
+// ——— usage & spend ———
+
+let usage = null;
+
+const money = (n) => (n == null ? '—' : n < 10 ? `$${n.toFixed(2)}` : `$${Math.round(n).toLocaleString()}`);
+const compactTokens = (n) => {
+  if (!n) return '0';
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return Math.round(n / 1e3) + 'K';
+  return String(n);
+};
+
+async function pollUsage() {
+  try {
+    const res = await fetch('/api/usage');
+    const data = await res.json();
+    if (data && !data.pending) {
+      usage = data;
+      renderUsageChip();
+      if (!$('usage').hidden) renderUsagePanel();
+    }
+  } catch { /* server may be restarting */ }
+}
+pollUsage();
+setInterval(pollUsage, 30000);
+// deep link: /#usage opens the spend panel straight away
+if (location.hash === '#usage') {
+  $('usage').hidden = false;
+  renderUsagePanel();
+}
+
+function renderUsageChip() {
+  const chip = $('stat-usage');
+  if (!chip || !usage) return;
+  chip.querySelector('b').textContent = money(usage.week.cost);
+  chip.title = `${money(usage.today.cost)} today · ${money(usage.week.cost)} this week · ${money(usage.last30.cost)} last 30 days`;
+}
+
+function bar(frac) {
+  const wrap = el('div', 'meter');
+  const fill = el('div', 'meter-fill');
+  fill.style.width = `${Math.max(2, Math.min(100, frac * 100))}%`;
+  wrap.append(fill);
+  return wrap;
+}
+
+function renderUsagePanel() {
+  const body = $('usage-body');
+  if (!body) return;
+  body.replaceChildren();
+  if (!usage) {
+    body.append(el('p', 'dim', 'Reading your local Claude Code token history…'));
+    return;
+  }
+
+  const head = el('div', 'usage-heads');
+  for (const [label, t] of [['Today', usage.today], ['This week', usage.week], ['Last 30 days', usage.last30]]) {
+    const card = el('div', 'usage-head');
+    card.append(el('span', 'uh-label', label), el('span', 'uh-cost', money(t.cost)));
+    card.append(el('span', 'uh-sub', `${compactTokens(t.output)} out · ${compactTokens(t.cacheRead)} cached · ${t.requests} calls`));
+    head.append(card);
+  }
+  body.append(head);
+
+  // this week by model — the "how much on Fable 5" answer
+  body.append(el('h3', null, 'THIS WEEK BY MODEL'));
+  const wm = usage.weekModels || [];
+  if (!wm.length) body.append(el('p', 'dim', 'No usage recorded this week yet.'));
+  const wmMax = Math.max(...wm.map((m) => m.cost), 0.01);
+  for (const m of wm) {
+    const row = el('div', 'usage-row');
+    row.append(el('span', 'ur-name', m.label), el('span', 'ur-cost', money(m.cost)));
+    body.append(row, bar(m.cost / wmMax));
+  }
+  body.append(el('p', 'dim tiny', 'Grouped by each session’s model, counted in the week it was last active.'));
+
+  body.append(el('h3', null, 'ALL TIME BY MODEL'));
+  const am = usage.models || [];
+  const amMax = Math.max(...am.map((m) => m.cost), 0.01);
+  for (const m of am) {
+    const row = el('div', 'usage-row');
+    row.append(el('span', 'ur-name', m.label), el('span', 'ur-cost', money(m.cost)));
+    body.append(row, bar(m.cost / amMax));
+  }
+
+  body.append(el('h3', null, 'MOST EXPENSIVE SESSIONS'));
+  const ul = el('ul');
+  const priciest = [...(usage.sessions || [])].sort((a, b) => b.cost - a.cost).slice(0, 8);
+  for (const s of priciest) {
+    const li = el('li');
+    li.append(
+      el('span', 'us-proj', s.project || 'unknown project'),
+      el('span', 'us-model', s.modelLabel),
+      el('span', 'us-cost', money(s.cost)),
+    );
+    ul.append(li);
+  }
+  body.append(ul);
+  body.append(el('p', 'dim tiny',
+    'Computed locally from token counts in your own Claude Code transcripts, priced at public API rates. Nothing is uploaded. Subscription plans are billed differently — treat this as an API-equivalent estimate.'));
+}
+
+// Session cost shown inside the building inspector, joined by session id.
+function sessionCost(sessionId) {
+  if (!usage || !sessionId) return null;
+  const s = (usage.sessions || []).find((x) => x.id === sessionId);
+  return s || null;
+}
+
 // ——— controls ———
 
 $('btn-fit').onclick = () => city.fit();
 $('stat-needsyou').onclick = () => { $('drawer').hidden = !$('drawer').hidden; };
+$('stat-usage').onclick = () => {
+  const panel = $('usage');
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) { renderUsagePanel(); pollUsage(); }
+};
 for (const btn of document.querySelectorAll('[data-close]')) {
   btn.onclick = () => { $(btn.dataset.close).hidden = true; if (btn.dataset.close === 'inspector') { selected = null; city.select(null); } };
 }
@@ -295,10 +415,16 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.key === 'f' || e.key === 'F') city.fit();
   else if (e.key === 'a' || e.key === 'A') $('drawer').hidden = !$('drawer').hidden;
+  else if (e.key === 'u' || e.key === 'U') {
+    const panel = $('usage');
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) { renderUsagePanel(); pollUsage(); }
+  }
   else if (e.key === '/') { e.preventDefault(); $('search').focus(); }
   else if (e.key === 'Escape') {
     $('inspector').hidden = true;
     $('drawer').hidden = true;
+    $('usage').hidden = true;
     selected = null;
     city.select(null);
   }

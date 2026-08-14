@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { reduce, snapshot, sweep } from './state.js';
 import { normalize } from './adapter-claude.js';
 import { saveCity, appendEventLog } from './persist.js';
+import { lastSnapshot as usageSnapshot, refreshUsage } from './usage.js';
 
 const WEB_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
 const MAX_BODY = 262144;
@@ -166,14 +167,29 @@ export function createCityServer(world, { logEvents = true, persist = true, vers
       return;
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/usage') {
+      const snap = usageSnapshot();
+      // Never block the response on a scan; serve what we have and refresh
+      // in the background for the next poll.
+      if (!snap || Date.now() - snap.generatedAt > 30000) refreshUsage();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify(snap || { pending: true }));
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
+      const snap = snapshot(world);
+      const usage = usageSnapshot();
       return res.end(JSON.stringify({
         ok: true,
         version,
         sessions: world.sessions.size,
         clients: clients.size,
+        // the menu bar renders these counts, so health carries the summary
+        summary: snap.summary,
+        attention: snap.attention.map((a) => ({ kind: a.kind, summary: a.summary })),
         providerHealth: world.providerHealth,
+        usage: usage ? { week: usage.week.cost, today: usage.today.cost } : null,
       }));
     }
 

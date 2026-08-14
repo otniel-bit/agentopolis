@@ -18,6 +18,7 @@
     <button class="stat attn" id="stat-needsyou" title="Open attention requests"><span class="dot dot-attn"></span><b>0</b> need you</button>
     <span class="stat stat-static" id="stat-failed" title="Failures in the last 5 minutes"><span class="dot dot-fail"></span><b>0</b> failed</span>
     <span class="stat stat-static" id="stat-done" title="Workers and tasks completed in the last 5 minutes"><span class="dot dot-done"></span><b>0</b> done</span>
+    <button class="stat stat-usage" id="stat-usage" title="Token spend — click for the full breakdown"><span class="dot dot-usage"></span><b>—</b> this week</button>
   </div>
   <div id="topbar-right">
     <input id="search" type="search" placeholder="/ search the city" aria-label="Search buildings">
@@ -33,6 +34,14 @@
   </div>
   <ul id="drawer-list"></ul>
   <p id="drawer-empty" class="dim">Nobody is waiting on you. Enjoy the view.</p>
+</aside>
+
+<aside id="usage" hidden>
+  <div class="panel-head">
+    <h2>Usage &amp; spend</h2>
+    <button class="close" data-close="usage" aria-label="Close">✕</button>
+  </div>
+  <div id="usage-body"></div>
 </aside>
 
 <aside id="inspector" hidden>
