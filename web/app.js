@@ -6,8 +6,13 @@ import { createCity } from './city.js';
 const $ = (id) => document.getElementById(id);
 const canvas = $('city');
 
+// Widget mode: compact chrome, ambient auto-framing (native panel hosts us).
+const WIDGET = new URLSearchParams(location.search).has('widget');
+if (WIDGET) document.body.classList.add('widget');
+
 let snap = null;
 let selected = null; // {kind:'building'|'agent', id}
+let lastBuildingCount = -1;
 
 const city = createCity(canvas, {
   onSelect(sel) {
@@ -50,6 +55,11 @@ function connect() {
     alive();
     snap = JSON.parse(e.data);
     city.setSnapshot(snap);
+    // ambient widget keeps the whole city framed as it grows and shrinks
+    if (WIDGET && snap.buildings.length !== lastBuildingCount) {
+      lastBuildingCount = snap.buildings.length;
+      city.fit();
+    }
     renderSummary();
     renderDrawer();
     renderInspector();

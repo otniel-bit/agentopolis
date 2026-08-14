@@ -149,3 +149,13 @@ code { background: rgba(143, 208, 255, 0.12); padding: 1px 6px; border-radius: 4
   .stat.attn[data-hot="1"] { animation: none; }
   #feed div { animation: none; }
 }
+
+/* ——— widget mode: compact chrome inside the native desktop panel ——— */
+.widget #logo, .widget #search, .widget #btn-motion, .widget #btn-fit,
+.widget #hint, .widget #feed { display: none; }
+.widget #topbar { padding: 5px 8px; gap: 8px; background: rgba(13, 15, 28, 0.55); }
+.widget #summary { gap: 5px; }
+.widget .stat { font-size: 10px; padding: 2px 8px; gap: 4px; }
+.widget .dot { width: 6px; height: 6px; }
+.widget aside { width: calc(100vw - 16px); top: 34px; bottom: 8px; right: 8px !important; }
+.widget .offline-card, .widget .empty-card { font-size: 11px; padding: 10px 14px; margin-bottom: 20px; }

@@ -22,9 +22,11 @@ No hooks, no setup — a synthetic agent swarm builds the city so you can tour i
 npx agentopolis
 ```
 
-It asks once for consent to add observation hooks to `~/.claude/settings.json`, then opens `http://127.0.0.1:4114`. New Claude Code sessions appear as they start. Requires Node 18+ and Claude Code.
+It asks once for consent to add observation hooks to `~/.claude/settings.json`, then opens the city. New Claude Code sessions appear as they start. Requires Node 18+ and Claude Code.
 
-Flags: `--port <n>` (default 4114) · `--no-open` (don't launch the browser) · `--yes` (skip the consent prompt) · `--no-hooks` (never touch `~/.claude/settings.json` this run) · `--no-log` (no local event history).
+**On macOS, the city opens as a desktop widget** — a small always-on-top panel that floats over your work on every Space, built locally on first run (~10s, needs Xcode Command Line Tools). Drag it by its title bar, resize from the edges, hit `⤢` for the full browser view. Everywhere else (or with `--browser`), it opens as a browser tab — same city, same engine.
+
+Flags: `--port <n>` (default 4114) · `--widget` / `--browser` (choose the face) · `--no-open` · `--yes` (skip the consent prompt) · `--no-hooks` (never touch `~/.claude/settings.json` this run) · `--no-log` (no local event history).
 
 ## What you're looking at
 
@@ -110,9 +112,9 @@ Yes — click its tent and hit **Pin as permanent building** in the inspector. (
 ## Roadmap
 
 - **Act from the city** — approve or deny permission requests without finding the right terminal tab
-- **Desktop app** (Tauri) — dock icon, native notifications
+- **Widget on Windows/Linux** — the always-on-top panel is macOS-only today
 - **More providers** — Codex, Gemini CLI, Cursor, via protocol adapters
-- **Mini mode** — tiny always-on-top city for the corner of your screen
+- **Native notifications** — a knock on the glass when a session needs you
 
 ---
 

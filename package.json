@@ -11,6 +11,7 @@
     "bin",
     "src",
     "web",
+    "widget",
     "docs/PROTOCOL.md",
     "README.md",
     "LICENSE"

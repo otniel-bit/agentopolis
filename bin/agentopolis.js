@@ -7,7 +7,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import readline from 'node:readline';
-import { execFile } from 'node:child_process';
+import crypto from 'node:crypto';
+import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createWorld } from '../src/state.js';
 import { createCityServer } from '../src/server.js';
@@ -35,7 +36,9 @@ if (args.has('--help') || args.has('-h')) {
   npx agentopolis --uninstall  remove hooks + bridge from this machine
 
   --port <n>     port to listen on (default 4114)
-  --no-open      don't open the browser
+  --widget       open the always-on-top desktop widget (macOS default)
+  --browser      open in the browser instead of the widget
+  --no-open      don't open anything
   --no-hooks     never touch ~/.claude/settings.json this run
   --yes          install hooks without asking
   --no-log       don't write the local event history log
@@ -95,6 +98,47 @@ function openBrowser(url) {
   execFile(cmd, [url], () => {});
 }
 
+// The desktop widget: a tiny native always-on-top panel hosting the city.
+// Compiled locally from the bundled Swift source on first run — a
+// locally-built binary carries no Gatekeeper quarantine.
+async function launchWidget(url) {
+  if (process.platform !== 'darwin') throw new Error('widget is macOS-only for now');
+  const running = await new Promise((r) =>
+    execFile('pgrep', ['-f', 'agentopolis-widget'], (e, out) => r(!!String(out || '').trim())));
+  if (running) return; // one widget is plenty
+  const src = path.join(PKG_ROOT, 'widget', 'widget.swift');
+  const hash = crypto.createHash('sha256').update(fs.readFileSync(src)).digest('hex').slice(0, 8);
+  const dir = path.join(homeDir(), 'widget');
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const bin = path.join(dir, `agentopolis-widget-${hash}`);
+  if (!fs.existsSync(bin)) {
+    console.log('  Building the desktop widget (first run, ~10s)…');
+    await new Promise((resolve, reject) => {
+      execFile('swiftc', ['-O', src, '-o', bin], { timeout: 180000 }, (err, _out, stderr) => {
+        err ? reject(new Error(String(stderr).slice(0, 300))) : resolve();
+      });
+    });
+  }
+  // Detached: the widget is a desktop companion — it outlives this server
+  // process and auto-reconnects whenever the city comes back.
+  spawn(bin, [url + '/?widget=1'], { detached: true, stdio: 'ignore' }).unref();
+}
+
+async function openCity(url) {
+  const wantWidget = args.has('--widget') ||
+    (process.platform === 'darwin' && !args.has('--browser'));
+  if (wantWidget) {
+    try {
+      await launchWidget(url);
+      console.log('  Widget is up — it floats above your windows. ⤢ opens the full city.');
+      return;
+    } catch (err) {
+      console.log(`  (widget unavailable: ${err.message.split('\n')[0]} — opening browser)`);
+    }
+  }
+  openBrowser(url);
+}
+
 async function main() {
   ensureHome();
   pruneEventLogs();
@@ -128,7 +172,7 @@ async function main() {
       }
       if (running && running.ok) {
         console.log(`  Agentopolis is already running → http://127.0.0.1:${p}`);
-        if (!args.has('--no-open')) openBrowser(`http://127.0.0.1:${p}`);
+        if (!args.has('--no-open')) await openCity(`http://127.0.0.1:${p}`);
         process.exit(0);
       }
     }
@@ -179,7 +223,7 @@ async function main() {
   }
 
   console.log(`  City is live → ${url}\n`);
-  if (!args.has('--no-open')) openBrowser(url);
+  if (!args.has('--no-open')) await openCity(url);
 
   const shutdown = () => {
     if (demo) demo.stop();
