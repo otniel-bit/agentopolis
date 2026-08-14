@@ -1,6 +1,6 @@
 {
   "name": "agentopolis",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Your AI coding agents, visualized as a living pixel city. Local-only mission control for Claude Code sessions and subagents.",
   "license": "MIT",
   "type": "module",

@@ -12,6 +12,8 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+/* author display rules must never resurrect [hidden] elements */
+[hidden] { display: none !important; }
 html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); }
 
 #city { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: grab; }
