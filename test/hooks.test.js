@@ -208,3 +208,38 @@ test("model/theme/statusLine top-level keys survive install and uninstall", () =
   assert.equal(settings.theme, original.theme);
   assert.deepEqual(settings.statusLine, original.statusLine);
 });
+
+// Launch-blocker guarantee: a tool that leaves junk in a user's Claude config
+// earns exactly the kind of review that sinks a launch. After uninstall, the
+// string ".agentopolis" must not survive anywhere in settings.json, and a
+// coexisting tool's hooks must be byte-identical to before we touched them.
+test("uninstall leaves zero trace, byte-identical to pre-install", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "apolis-clean-"));
+  const settings = path.join(dir, "settings.json");
+  const original = {
+    model: "claude-opus-5",
+    theme: "dark",
+    statusLine: { type: "command", command: "/Users/x/statusline.sh" },
+    hooks: {
+      SessionStart: [
+        { hooks: [{ type: "command", command: '"/Users/x/.rubin-buddy/state.sh" idle', async: true }] },
+        { matcher: ".*", hooks: [{ type: "command", command: "'/Users/x/Xirp/sessionStart.cjs'" }] },
+      ],
+      PreToolUse: [
+        { matcher: ".*", hooks: [{ type: "command", command: "'/Users/x/Xirp/preToolUse.cjs'" }] },
+      ],
+      Stop: [{ hooks: [{ type: "command", command: "echo stop" }] }],
+    },
+  };
+  const before = JSON.stringify(original, null, 2) + "\n";
+  fs.writeFileSync(settings, before);
+
+  installHooks(settings, "/Users/x/.agentopolis/bridge/hook.mjs");
+  assert.ok(fs.readFileSync(settings, "utf8").includes(".agentopolis"), "install landed");
+
+  uninstallHooks(settings);
+  const after = fs.readFileSync(settings, "utf8");
+  assert.ok(!after.includes(".agentopolis"), "no trace of our hooks remains");
+  assert.ok(!after.includes("agentopolis"), "not even the bare name remains");
+  assert.deepEqual(JSON.parse(after), original, "config is semantically identical to pre-install");
+});

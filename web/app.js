@@ -107,7 +107,9 @@ function renderSummary() {
   set('stat-waiting', s.waiting);
   set('stat-needsyou', s.needsYou);
   set('stat-failed', s.failed);
-  set('stat-done', s.doneRecent);
+  // Outcomes, not activity — see the chip's tooltip.
+  set('stat-done', s.wins ?? 0);
+  $('stat-done').title = `${s.wins ?? 0} real outcomes in the last 5 minutes (tests green, commits landed) · ${s.doneRecent} workers finished. Elapsed time never counts.`;
   $('stat-needsyou').dataset.hot = s.needsYou > 0 ? '1' : '0';
   document.title = s.needsYou > 0 ? `(${s.needsYou}!) Agentopolis` : 'Agentopolis';
 }
@@ -291,6 +293,9 @@ async function pollUsage() {
 }
 pollUsage();
 setInterval(pollUsage, 30000);
+// The native widget pauses rendering while its popover is closed.
+window.__agentopolisPause = (v) => city.setPaused(v);
+
 // deep link: /#usage opens the spend panel straight away
 if (location.hash === '#usage') {
   $('usage').hidden = false;

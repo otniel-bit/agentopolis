@@ -37,6 +37,7 @@ export function createCity(canvas, { onSelect } = {}) {
   const workers = new Map();   // agentId -> visual state
   const promoAnims = new Map(); // buildingId -> start time
   const flashes = new Map();    // buildingId -> {color, until}
+  const wins = new Map();       // buildingId -> {label, until} — outcome banners
   const particles = [];
   const hits = [];              // screen-space hit rects, rebuilt per frame
   const plates = [];            // name plates drawn above workers, per frame
@@ -68,6 +69,7 @@ export function createCity(canvas, { onSelect } = {}) {
   function relayout() {
     origins = new Map();
     if (!snap) return;
+    districtById = new Map(snap.districts.map((d) => [d.id, d]));
     computeRowH();
     const rows = new Map();
     for (const d of snap.districts) {
@@ -170,8 +172,9 @@ export function createCity(canvas, { onSelect } = {}) {
     };
   }
 
+  let districtById = new Map();
   function buildingPos(b) {
-    const d = snap.districts.find((x) => x.id === b.districtId);
+    const d = districtById.get(b.districtId);
     if (!d) return { x: 0, y: 0 };
     const o = districtPos(d);
     return {
@@ -221,6 +224,13 @@ export function createCity(canvas, { onSelect } = {}) {
       if (was && !was.permanent && b.permanent) {
         promoAnims.set(b.id, performance.now());
         flashes.set(b.id, { color: PALETTE.ok, until: performance.now() + 1100 });
+      }
+      // Celebrate outcomes only: a green test run or a landed commit.
+      if (was && b.lastWinAt && b.lastWinAt !== was.lastWinAt) {
+        flashes.set(b.id, { color: PALETTE.ok, until: performance.now() + 900 });
+        const p = buildingPos(b);
+        burst({ x: p.x, y: p.y - 10 }, 14, [PALETTE.ok, '#baf5c0', '#e8ffe9']);
+        wins.set(b.id, { label: b.lastWinLabel || 'done', until: performance.now() + 3200 });
       }
       if (was && was.state !== 'failed' && b.state === 'failed') {
         flashes.set(b.id, { color: PALETTE.fail, until: performance.now() + 900 });
@@ -414,20 +424,58 @@ export function createCity(canvas, { onSelect } = {}) {
 
   // ——— drawing ———
 
+  let bgLayer = null, bgW = 0, bgH = 0;
+  let gridTile = null, gridStep = 0;
+
+  // The sky and the plan grid never change between frames — bake them once and
+  // blit. This is what keeps a busy city off the "significant energy" list.
+  function buildBgLayer(w, h) {
+    bgLayer = document.createElement('canvas');
+    bgLayer.width = w; bgLayer.height = h;
+    const g = bgLayer.getContext('2d');
+    g.fillStyle = PALETTE.floor;
+    g.fillRect(0, 0, w, h);
+    for (const s2 of starsFar) {
+      g.fillStyle = 'rgba(205,212,245,0.16)';
+      g.fillRect((s2.x / 1900) * w, (s2.y / 950) * h, 1.2, 1.2);
+    }
+    bgW = w; bgH = h;
+  }
+
+  function buildGridTile(step) {
+    gridTile = document.createElement('canvas');
+    gridTile.width = step; gridTile.height = step;
+    const g = gridTile.getContext('2d');
+    g.fillStyle = 'rgba(160,170,215,0.05)';
+    g.fillRect(0, 0, 1.5, 1.5);
+    gridStep = step;
+  }
+
   function drawBackground(t) {
     const w = canvas.clientWidth, h = canvas.clientHeight;
-    ctx.fillStyle = PALETTE.floor;
-    ctx.fillRect(0, 0, w, h);
-    // faint plan grid anchored to world space so it pans with the floor
-    const step = 32 * cam.zoom;
+    if (!bgLayer || bgW !== w || bgH !== h) buildBgLayer(w, h);
+    ctx.drawImage(bgLayer, 0, 0);
+
+    // world-anchored plan grid, one pattern fill
+    const step = Math.round(32 * cam.zoom);
     if (step > 9) {
+      if (!gridTile || gridStep !== step) buildGridTile(step);
       const offX = ((-cam.x * cam.zoom + w / 2) % step + step) % step;
       const offY = ((-cam.y * cam.zoom + h / 2) % step + step) % step;
-      ctx.fillStyle = 'rgba(160,170,215,0.05)';
-      for (let x = offX; x < w; x += step) {
-        for (let y = offY; y < h; y += step) {
-          ctx.fillRect(x, y, 1.5, 1.5);
-        }
+      const pat = ctx.createPattern(gridTile, 'repeat');
+      ctx.save();
+      ctx.translate(offX, offY);
+      ctx.fillStyle = pat;
+      ctx.fillRect(-step, -step, w + step * 2, h + step * 2);
+      ctx.restore();
+    }
+
+    // a handful of animated highlights, instead of twinkling all 166
+    if (!reducedMotion) {
+      for (const s2 of starsNear) {
+        const tw = 0.4 + 0.6 * Math.abs(Math.sin(t / 800 + s2.p));
+        ctx.fillStyle = `rgba(230,236,255,${tw * 0.35})`;
+        ctx.fillRect((s2.x / 1900) * w, (s2.y / 950) * h, 2, 2);
       }
     }
   }
@@ -464,75 +512,89 @@ export function createCity(canvas, { onSelect } = {}) {
     }
   }
 
+  // Each suite's floor is static furniture: carpet, texture, walls, plants,
+  // the cooler, the nameplate. Bake it once per (district, extent) into an
+  // offscreen layer at world scale and blit — instead of ~70 draw calls per
+  // district per frame.
+  const groundCache = new Map(); // districtId -> {key, canvas, w, h}
+
+  function buildDistrictGround(d, ext) {
+    const W = Math.ceil(ext.w), H = Math.ceil(ext.h);
+    const c = document.createElement('canvas');
+    c.width = W + 8; c.height = H + 10;
+    const g = c.getContext('2d');
+    const ox = 4, oy = 4;
+    const seed = d.id.charCodeAt(2) + d.id.charCodeAt(3);
+    const accents = ['#5b8bd9', '#5aa876', '#c5586b', '#c78f4e', '#8d6fc0'];
+    const accent = accents[seed % accents.length];
+
+    g.fillStyle = 'rgba(0,0,0,0.35)';
+    g.beginPath(); g.roundRect(ox - 2, oy + 2, W + 8, H + 6, 8); g.fill();
+    g.fillStyle = PALETTE.carpetA;
+    g.beginPath(); g.roundRect(ox, oy, W, H, 6); g.fill();
+    g.fillStyle = `rgba(${parseInt(accent.slice(1, 3), 16)},${parseInt(accent.slice(3, 5), 16)},${parseInt(accent.slice(5, 7), 16)},0.05)`;
+    g.beginPath(); g.roundRect(ox, oy, W, H, 6); g.fill();
+
+    g.fillStyle = 'rgba(255,255,255,0.025)';
+    for (let i = 0; i < 40; i++) {
+      const gx = (i * 379 + seed * 131) % (ext.w - 10);
+      const gy = (i * 523 + seed * 197) % (ext.h - 10);
+      g.fillRect(ox + 5 + gx, oy + 5 + gy, 4, 1.2);
+    }
+
+    g.strokeStyle = PALETTE.wallLine;
+    g.lineWidth = 2.4;
+    g.beginPath(); g.roundRect(ox + 1.2, oy + 1.2, W - 2.4, H - 2.4, 5); g.stroke();
+
+    for (let r = 0; r < ext.rows; r++) {
+      const y = oy + (HEADER + 20 + r * rowH + (rowH - YARD) - 4);
+      if (y > oy + H - 6) break;
+      g.fillStyle = PALETTE.carpetB;
+      g.fillRect(ox + 6, y, W - 12, 9);
+      g.fillStyle = 'rgba(255,255,255,0.04)';
+      g.fillRect(ox + 6, y, W - 12, 1);
+    }
+
+    g.imageSmoothingEnabled = false;
+    g.drawImage(plantSprite(seed), ox + W - 32, oy + 8, 21, 27);
+    if (ext.w > 220) g.drawImage(plantSprite(seed + 1), ox + 8, oy + H - 34, 21, 27);
+
+    // water cooler, drawn at its world offset inside the layer
+    const cw = ext.w - 26, ch = ext.h - 32;
+    g.globalAlpha = 0.22;
+    g.drawImage(glowSprite(), ox + cw - 18, ch + oy - 24, 40, 40);
+    g.globalAlpha = 1;
+    g.drawImage(coolerSprite(), ox + cw - 7, oy + ch - 22, 15, 24);
+
+    g.fillStyle = 'rgba(15,17,30,0.6)';
+    const label = d.name.toUpperCase();
+    g.font = 'bold 9px ui-monospace, monospace';
+    const tw = g.measureText(label).width;
+    g.beginPath(); g.roundRect(ox + 10, oy + 5, tw + 12, 14, 4); g.fill();
+    g.fillStyle = PALETTE.textDim;
+    g.fillText(label, ox + 16, oy + 15.5);
+
+    return { canvas: c, ox, oy };
+  }
+
   function drawDistrict(d, t) {
     const o = districtPos(d);
     const p0 = toScreen(o.x, o.y);
     const z = cam.zoom;
     const ext = districtExtent(d);
-    const W = ext.w * z, H = ext.h * z;
-    const seed = d.id.charCodeAt(2) + d.id.charCodeAt(3);
-    const accents = ['#5b8bd9', '#5aa876', '#c5586b', '#c78f4e', '#8d6fc0'];
-    const accent = accents[seed % accents.length];
-
-    // suite drop shadow + carpet, tinted faintly per repo
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath();
-    ctx.roundRect(p0.x - 2 * z, p0.y + 2 * z, W + 8 * z, H + 8 * z, 8 * z);
-    ctx.fill();
-    ctx.fillStyle = PALETTE.carpetA;
-    ctx.beginPath();
-    ctx.roundRect(p0.x, p0.y, W, H, 6 * z);
-    ctx.fill();
-    ctx.fillStyle = `rgba(${parseInt(accent.slice(1, 3), 16)},${parseInt(accent.slice(3, 5), 16)},${parseInt(accent.slice(5, 7), 16)},0.05)`;
-    ctx.beginPath();
-    ctx.roundRect(p0.x, p0.y, W, H, 6 * z);
-    ctx.fill();
-
-    // carpet weave texture
-    ctx.fillStyle = 'rgba(255,255,255,0.025)';
-    for (let i = 0; i < 40; i++) {
-      const gx = ((i * 379 + seed * 131) % (ext.w - 10)) * z;
-      const gy = ((i * 523 + seed * 197) % (ext.h - 10)) * z;
-      ctx.fillRect(p0.x + 5 * z + gx, p0.y + 5 * z + gy, 4 * z, 1.2 * z);
+    const key = `${Math.round(ext.w)}x${Math.round(ext.h)}x${ext.rows}x${d.name}`;
+    let cached = groundCache.get(d.id);
+    if (!cached || cached.key !== key) {
+      const built = buildDistrictGround(d, ext);
+      cached = { key, ...built };
+      groundCache.set(d.id, cached);
     }
-
-    // suite walls
-    ctx.strokeStyle = PALETTE.wallLine;
-    ctx.lineWidth = 2.4 * z;
-    ctx.beginPath();
-    ctx.roundRect(p0.x + 1.2 * z, p0.y + 1.2 * z, W - 2.4 * z, H - 2.4 * z, 5 * z);
-    ctx.stroke();
-
-    // walkway strip where the rooms open onto
-    for (let r = 0; r < ext.rows; r++) {
-      const y = p0.y + (HEADER + 20 + r * rowH + (rowH - YARD) - 4) * z;
-      if (y > p0.y + H - 6 * z) break;
-      ctx.fillStyle = PALETTE.carpetB;
-      ctx.fillRect(p0.x + 6 * z, y, W - 12 * z, 9 * z);
-      ctx.fillStyle = 'rgba(255,255,255,0.04)';
-      ctx.fillRect(p0.x + 6 * z, y, W - 12 * z, 1 * z);
-    }
-
-    // office plants in the corners + the water cooler
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(plantSprite(seed), p0.x + W - 32 * z, p0.y + 8 * z, 21 * z, 27 * z);
-    if (ext.w > 220) {
-      ctx.drawImage(plantSprite(seed + 1), p0.x + 8 * z, p0.y + H - 34 * z, 21 * z, 27 * z);
-    }
-    const cool = coolerPos(d);
-    const cp = toScreen(cool.x, cool.y);
-    ctx.drawImage(coolerSprite(), cp.x - 7 * z, cp.y - 22 * z, 15 * z, 24 * z);
-
-    // suite nameplate
-    ctx.fillStyle = 'rgba(15,17,30,0.6)';
-    const label = d.name.toUpperCase();
-    ctx.font = `bold ${Math.max(8, 9 * z)}px ui-monospace, monospace`;
-    const tw = ctx.measureText(label).width;
-    ctx.beginPath();
-    ctx.roundRect(p0.x + 10 * z, p0.y + 5 * z, tw + 12 * z, 14 * z, 4 * z);
-    ctx.fill();
-    ctx.fillStyle = PALETTE.textDim;
-    ctx.fillText(label, p0.x + 16 * z, p0.y + (5 + 10.5) * z);
+    ctx.drawImage(
+      cached.canvas,
+      p0.x - cached.ox * z, p0.y - cached.oy * z,
+      cached.canvas.width * z, cached.canvas.height * z,
+    );
   }
 
   function drawBuilding(b, t) {
@@ -621,6 +683,13 @@ export function createCity(canvas, { onSelect } = {}) {
 
     // name plate rendered later as a sign over the door
     plates.push({ x: door.x, sy: y - 13 * z, name: b.name, permanent: b.permanent });
+
+    // outcome banner: what actually landed, briefly, above the room
+    const win = wins.get(b.id);
+    if (win) {
+      if (performance.now() > win.until) wins.delete(b.id);
+      else bubbles.push({ text: '✓ ' + win.label, x: door.x, y: y - 20 * z, ok: true });
+    }
 
     // selection ring
     if (selectedId === b.id) {
@@ -756,8 +825,32 @@ export function createCity(canvas, { onSelect } = {}) {
 
   // ——— main loop ———
 
+  // A city of animated workers is the worst case for battery in this category,
+  // so an idle city costs almost nothing: full rate only while something is
+  // actually moving, ~8fps when the office is quiet, and nothing at all while
+  // the window is hidden or the widget's popover is closed.
   let last = performance.now();
+  let lastDraw = 0;
+  let paused = false;
+  function isBusy() {
+    if (particles.length || promoAnims.size || flashes.size || wins.size) return true;
+    if (!snap) return false;
+    if (snap.attention && snap.attention.length) return true;
+    for (const w of workers.values()) if (w.moving) return true;
+    for (const a of snap.agents) if (a.activity && !a.activity.done) return true;
+    return false;
+  }
+
   function tick(now) {
+    requestAnimationFrame(tick);
+    if (paused || document.hidden) return;
+    // Pixel art is stepped animation: 20fps reads as intentional, costs a
+    // third of 60fps, and an idle office drops to 8fps. This is the single
+    // biggest lever on battery for an always-on widget.
+    const minFrame = isBusy() ? 48 : 120;
+    if (now - lastDraw < minFrame) return;
+    lastDraw = now;
+
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
 
@@ -798,15 +891,14 @@ export function createCity(canvas, { onSelect } = {}) {
         ctx.fillStyle = p.permanent ? PALETTE.text : PALETTE.textDim;
         ctx.fillText(name, p.x - tw / 2, p.sy + 8.5 * z);
       }
-      for (const bb of bubbles) drawBubble(ctx, bb.text, bb.x, bb.y, z);
+      for (const bb of bubbles) drawBubble(ctx, bb.text, bb.x, bb.y, z, bb.ok);
       bubbles.length = 0;
       drawParticles(dt);
-      drawVignette();
+      if (canvas.clientWidth > 620) drawVignette();
     }
-
-    requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
+  document.addEventListener('visibilitychange', () => { last = performance.now(); });
 
   // ——— input: pan, zoom, click ———
 
@@ -862,6 +954,9 @@ export function createCity(canvas, { onSelect } = {}) {
     },
     select(id) { selectedId = id; },
     setReducedMotion(v) { reducedMotion = v; },
+    // The menu-bar widget calls this when its popover closes, so a hidden
+    // city draws nothing at all instead of animating into the void.
+    setPaused(v) { paused = !!v; if (!v) last = performance.now(); },
     getSelected: () => selectedId,
   };
 }

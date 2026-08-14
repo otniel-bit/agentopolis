@@ -164,7 +164,7 @@ final class Controller: NSObject, NSPopoverDelegate {
     if popover.isShown { popover.performClose(nil); return }
     guard let button = statusItem.button else { return }
     if !serverUp { startServer() }
-    popWebView.reload()
+    popWebView.evaluateJavaScript("window.__agentopolisPause && window.__agentopolisPause(false)")
     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     // keyboard shortcuts inside the page need first responder
     popover.contentViewController?.view.window?.makeFirstResponder(popWebView)
@@ -371,6 +371,12 @@ final class Controller: NSObject, NSPopoverDelegate {
   }
 
   @objc func togglePopoverFromMenu() { togglePopover() }
+
+  // A closed popover must cost nothing: stop the render loop, keep the SSE
+  // connection so counts stay live in the menu bar.
+  func popoverDidClose(_ notification: Notification) {
+    popWebView.evaluateJavaScript("window.__agentopolisPause && window.__agentopolisPause(true)")
+  }
 
   func start() {
     buildPopover()

@@ -34,6 +34,10 @@ export function createWorld() {
     feed: [],
     recentDone: [],         // timestamps of recent completions
     recentFail: [],
+    // Outcomes, not activity: a busy-looking city must not read as a
+    // productive one. Wins are things that actually landed — a test suite
+    // going green, a commit made — never elapsed time or tool-call count.
+    recentWins: [],
     providerHealth: { lastEventAt: null, lastReconcileAt: null, reconcileError: null },
   };
 }
@@ -427,8 +431,24 @@ export function reduce(world, evt) {
       const a = world.agents.get(evt.session + ':' + (evt.agent || 'root'));
       if (!a) return false;
       const fail = d.outcome === 'fail';
-      if (a.activity && (!d.toolUseId || !a.activity.toolUseId || a.activity.toolUseId === d.toolUseId)) {
-        a.activity.done = true;
+      const matches = a.activity &&
+        (!d.toolUseId || !a.activity.toolUseId || a.activity.toolUseId === d.toolUseId);
+      const endedKind = matches ? a.activity.kind : null;
+      const endedRule = matches ? a.activity.ruleId : null;
+      if (matches) a.activity.done = true;
+
+      // A green test run or a landed commit is a real outcome worth showing.
+      if (!fail && endedKind) {
+        let win = null;
+        if (endedKind === 'testing') win = 'tests passed';
+        else if (endedKind === 'version_control' && /commit/.test(endedRule || '')) win = 'commit landed';
+        if (win) {
+          world.recentWins.push({ at: evt.at, kind: endedKind, label: win });
+          const wb = s && getBuilding(world, s);
+          if (wb) { wb.lastWinAt = evt.at; wb.lastWinLabel = win; }
+          a.lastWinAt = evt.at;
+          feedPush(world, evt, `${sessionLabel(world, evt)} · ✓ ${win}`);
+        }
       }
       if (fail) {
         // Tool failures flash and land in the feed, but only turn/agent
@@ -562,6 +582,11 @@ export function sweep(world, now = Date.now()) {
   };
   if (cutRecent(world.recentDone)) changed = true;
   if (cutRecent(world.recentFail)) changed = true;
+  const winsKeep = world.recentWins.filter((w) => now - w.at < RECENT_WINDOW_MS);
+  if (winsKeep.length !== world.recentWins.length) {
+    world.recentWins = winsKeep;
+    changed = true;
+  }
   if (changed) world.seq++;
   return changed;
 }
@@ -584,7 +609,9 @@ export function snapshot(world, now = Date.now()) {
       needsYou: world.attention.size,
       failed: world.recentFail.filter((t) => now - t < RECENT_WINDOW_MS).length,
       doneRecent: world.recentDone.filter((t) => now - t < RECENT_WINDOW_MS).length,
+      wins: world.recentWins.filter((w) => now - w.at < RECENT_WINDOW_MS).length,
     },
+    wins: world.recentWins.filter((w) => now - w.at < RECENT_WINDOW_MS).slice(-8),
     districts: [...world.districts.values()].map((d) => ({
       id: d.id, name: d.name, path: d.path, col: d.col, row: d.row,
     })),
@@ -592,6 +619,7 @@ export function snapshot(world, now = Date.now()) {
       id: b.id, districtId: b.districtId, plot: b.plot, name: b.name,
       permanent: b.permanent, nameOrigin: b.nameOrigin, state: b.state,
       sessionId: b.sessionId, attention: b.attention, lastActiveAt: b.lastActiveAt,
+      lastWinAt: b.lastWinAt || null, lastWinLabel: b.lastWinLabel || null,
     })),
     agents: [...world.agents.values()]
       .filter((a) => !a.finishedAt || now - a.finishedAt < RECENT_WINDOW_MS)

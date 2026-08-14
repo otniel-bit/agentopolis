@@ -329,7 +329,7 @@ export function workerSprite(seed, agentType, pose, frame, facing = 'down') {
 
 // Speech bubble with a short glyph or word. Drawn in screen space above a
 // worker's head; text stays legible when zoomed, decorative when tiny.
-export function drawBubble(g, text, x, y, z) {
+export function drawBubble(g, text, x, y, z, ok = false) {
   g.save();
   const fs = Math.max(7, 7.5 * z);
   g.font = `bold ${fs}px ui-monospace, monospace`;
@@ -337,7 +337,7 @@ export function drawBubble(g, text, x, y, z) {
   const pad = 4 * z;
   const w = tw + pad * 2, h = fs + pad * 1.2;
   const bx = x - w / 2, by = y - h - 6 * z;
-  g.fillStyle = 'rgba(248,248,255,0.96)';
+  g.fillStyle = ok ? 'rgba(196,247,208,0.97)' : 'rgba(248,248,255,0.96)';
   g.beginPath();
   g.roundRect(bx, by, w, h, 4 * z);
   g.fill();
@@ -347,7 +347,7 @@ export function drawBubble(g, text, x, y, z) {
   g.lineTo(x, by + h + 4 * z);
   g.closePath();
   g.fill();
-  g.fillStyle = '#23263c';
+  g.fillStyle = ok ? '#1c4a2b' : '#23263c';
   g.fillText(text, bx + pad, by + h - pad * 0.9);
   g.restore();
 }
