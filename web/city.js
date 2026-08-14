@@ -137,7 +137,7 @@ export function createCity(canvas, { onSelect } = {}) {
   }
   function foremanPost(b) {
     const door = buildingPos(b);
-    return { x: door.x + 20, y: door.y + 14 };
+    return { x: door.x + 34, y: door.y + 16 };
   }
   const CHAT = {
     researching: 'hmm…', reading: 'hmm…', editing: 'tak tak tak', creating: 'tak tak',
@@ -318,14 +318,18 @@ export function createCity(canvas, { onSelect } = {}) {
           }
           break;
         }
-        case 'emerge': { // step out, walk to the foreman, say hi
+        case 'emerge': { // step out, walk to the foreman, have a word
           if (arrive(post.x - 22, post.y + 4) && !w.greeted) {
             w.greeted = true;
-            say('on it!');
+            w.replyAt = now + 1500; // wait for the foreman to finish asking
             const rootW = workers.get(a.id.split(':')[0] + ':root');
-            if (rootW) rootW.bubble = { text: CHAT.delegating, until: now + 1500 };
+            if (rootW) rootW.bubble = { text: CHAT.delegating, until: now + 1400 };
           }
-          if (w.greeted && now - w.stageAt > 2600) { w.stage = 'work'; w.stageAt = now; }
+          if (w.greeted && w.replyAt && now > w.replyAt) {
+            say('on it!', 1400);
+            w.replyAt = null;
+          }
+          if (w.greeted && now - w.stageAt > 3400) { w.stage = 'work'; w.stageAt = now; }
           break;
         }
         case 'work': { // visible work at a yard spot
@@ -659,8 +663,8 @@ export function createCity(canvas, { onSelect } = {}) {
       ctx.restore();
     }
 
-    // name plate rendered later, above workers, so it stays legible
-    plates.push({ x: door.x, y: door.y, name: b.name, permanent: b.permanent });
+    // name plate rendered later as a sign over the door
+    plates.push({ x: door.x, y: door.y - 46 * z / z * z - 0, sy: y - 8 * z, name: b.name, permanent: b.permanent });
 
     // selection ring
     if (selectedId === b.id) {
@@ -811,10 +815,10 @@ export function createCity(canvas, { onSelect } = {}) {
         const tw = ctx.measureText(name).width;
         ctx.fillStyle = p.permanent ? 'rgba(15,17,30,0.7)' : 'rgba(15,17,30,0.45)';
         ctx.beginPath();
-        ctx.roundRect(p.x - tw / 2 - 4 * z, p.y + 9 * z, tw + 8 * z, 11.5 * z, 3 * z);
+        ctx.roundRect(p.x - tw / 2 - 4 * z, p.sy, tw + 8 * z, 11.5 * z, 3 * z);
         ctx.fill();
         ctx.fillStyle = p.permanent ? PALETTE.text : PALETTE.textDim;
-        ctx.fillText(name, p.x - tw / 2, p.y + (9 + 8.5) * z);
+        ctx.fillText(name, p.x - tw / 2, p.sy + 8.5 * z);
       }
       for (const bb of bubbles) drawBubble(ctx, bb.text, bb.x, bb.y, z);
       bubbles.length = 0;
