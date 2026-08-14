@@ -409,11 +409,13 @@ export function drawDesk(g, kind, cx, feetY, t, scale, dir = 1) {
   g.fillStyle = '#3a3352';
   g.fillRect(X(-8.4), -8.6, 1.8, 1.6); // monitor stand
 
-  // coffee mug + papers
+  // coffee mug + papers (muted on unstaffed desks)
+  g.globalAlpha = off ? 0.45 : 1;
   g.fillStyle = '#c5586b';
   g.fillRect(X(3.6), -9.4, 2.4, 2.4);
   g.fillStyle = '#e8e6f0';
   g.fillRect(X(6.8), -8.2, 3.6, 1.2);
+  g.globalAlpha = 1;
   g.restore();
 }
 

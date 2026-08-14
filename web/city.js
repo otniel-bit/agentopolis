@@ -54,12 +54,23 @@ export function createCity(canvas, { onSelect } = {}) {
   // and each row starts below the tallest district above it. Discovery
   // order (col/row from the server) stays stable, so geography is learnable.
   let origins = new Map();
+  let rowH = PLOT_H;
+  function computeRowH() {
+    let maxH = 84; // trailer sprite height x scale
+    for (const b of snap.buildings) {
+      if (!b.permanent) continue;
+      const m = metricsFor(b);
+      maxH = Math.max(maxH, (SPRITE_PAD_Y + ROOF_Y + m.floors * FLOOR_H + BASE_H + 4) * BSCALE);
+    }
+    rowH = Math.min(PLOT_H, maxH + 34);
+  }
   function hasBuildings(d) {
     return snap.buildings.some((b) => b.districtId === d.id);
   }
   function relayout() {
     origins = new Map();
     if (!snap) return;
+    computeRowH();
     const rows = new Map();
     for (const d of snap.districts) {
       if (!hasBuildings(d)) continue; // empty land isn't drawn or reserved
@@ -78,7 +89,7 @@ export function createCity(canvas, { onSelect } = {}) {
           causeways.push({
             x1: prevEdge - 5,
             x2: x + 5,
-            y: y + HEADER + 20 + PLOT_H - 6,
+            y: y + HEADER + 20 + rowH - 6,
           });
         }
         prevEdge = x + e.w;
@@ -150,7 +161,7 @@ export function createCity(canvas, { onSelect } = {}) {
     }
     return {
       w: Math.min(DISTRICT_W, 52 + (maxX + 1) * PLOT_W),
-      h: Math.min(DISTRICT_H, HEADER + 26 + (maxY + 1) * PLOT_H),
+      h: Math.min(DISTRICT_H, HEADER + 26 + (maxY + 1) * rowH),
       rows: maxY + 1,
     };
   }
@@ -161,7 +172,7 @@ export function createCity(canvas, { onSelect } = {}) {
     const o = districtPos(d);
     return {
       x: o.x + 26 + b.plot.x * PLOT_W + PLOT_W / 2,
-      y: o.y + HEADER + 20 + b.plot.y * PLOT_H + PLOT_H - 12, // door line
+      y: o.y + HEADER + 20 + b.plot.y * rowH + rowH - 12, // door line
     };
   }
 
@@ -282,13 +293,24 @@ export function createCity(canvas, { onSelect } = {}) {
       const slot = crew.indexOf(a.id);
       const hasDesk = slot > -1 && slot < deskCountFor(b);
       w.desk = null;
-      // workers who were already finished when we met them still clock out
-      if (a.finishedAt && !w.leaveAt) w.leaveAt = now + 1200 + (a.seed * 1500);
+      // finished workers linger a beat, then fade out with a puff
+      if (a.finishedAt && !w.leaveAt) w.leaveAt = now + 1400 + (a.seed * 1200);
       if (a.finishedAt && w.leaveAt && now > w.leaveAt) {
-        w.tx = door.x; w.ty = door.y - 2; // walk back inside
-        if (Math.hypot(w.x - w.tx, w.y - w.ty) < 3) w.gone = true;
+        if (!w.fadeStart) {
+          w.fadeStart = now;
+          if (!reducedMotion) {
+            for (let i = 0; i < 4; i++) {
+              particles.push({
+                x: w.x + (Math.random() - 0.5) * 10, y: w.y - 6 - Math.random() * 8,
+                vx: (Math.random() - 0.5) * 10, vy: -8 - Math.random() * 6,
+                g: -2, life: 0.8, color: 'rgba(200,205,235,0.6)', size: 2.4,
+              });
+            }
+          }
+        }
+        if (now - w.fadeStart > 700) w.gone = true;
       } else if (a.state === 'attention') {
-        w.tx = door.x; w.ty = door.y + 30; // out front, hand up
+        w.tx = door.x; w.ty = door.y + 16; // out front on the road, hand up
       } else if (!a.finishedAt && hasDesk) {
         const d = deskWorld(b, slot);
         w.tx = d.x; w.ty = d.y;
@@ -477,7 +499,7 @@ export function createCity(canvas, { onSelect } = {}) {
 
     // roads between plot rows, with curbs
     for (let r = 0; r < ext.rows; r++) {
-      const y = p0.y + (HEADER + 20 + r * PLOT_H + PLOT_H - 6) * z;
+      const y = p0.y + (HEADER + 20 + r * rowH + rowH - 6) * z;
       if (y > p0.y + H - 6 * z) break;
       ctx.fillStyle = 'rgba(0,0,0,0.18)';
       ctx.fillRect(p0.x + 6 * z, y - 1 * z, W - 12 * z, 9 * z);
@@ -498,7 +520,7 @@ export function createCity(canvas, { onSelect } = {}) {
     }
 
     // street lamps flanking the first road, with warm pools
-    const lampY = p0.y + (HEADER + 20 + PLOT_H - 6) * z;
+    const lampY = p0.y + (HEADER + 20 + rowH - 6) * z;
     const glow = glowSprite();
     for (const lx of [p0.x + 12 * z, p0.x + W - 16 * z]) {
       ctx.globalAlpha = 0.22;
@@ -547,10 +569,10 @@ export function createCity(canvas, { onSelect } = {}) {
     const x = door.x - sw / 2;
     const y = door.y - sh * yScale + 6 * z;
 
-    // ground shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    // ground shadow — light-handed, it's a hint not a stain
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
     ctx.beginPath();
-    ctx.ellipse(door.x, door.y + 5 * z, sw * (b.permanent ? 0.44 : 0.34), 4 * z, 0, 0, Math.PI * 2);
+    ctx.ellipse(door.x, door.y + 5 * z, sw * (b.permanent ? 0.44 : 0.34), 3.5 * z, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // warm presence glow — the "someone is home" light
@@ -662,7 +684,8 @@ export function createCity(canvas, { onSelect } = {}) {
 
     const spr = workerSprite(a.seed, a.agentType, pose, frame);
     ctx.imageSmoothingEnabled = false;
-    const fade = a.finishedAt ? Math.max(0.35, 1 - (Date.now() - a.finishedAt) / 240000) : 1;
+    let fade = a.finishedAt ? Math.max(0.35, 1 - (Date.now() - a.finishedAt) / 240000) : 1;
+    if (w.fadeStart) fade = Math.max(0, 0.9 - (performance.now() - w.fadeStart) / 700);
     ctx.globalAlpha = fade;
     const bob = seated ? 0 : Math.sin(w.phase + t / 400) * (reducedMotion ? 0 : 0.8) * z;
     ctx.drawImage(spr, p.x - 6 * scale, p.y - 8 * scale + bob, 12 * scale, 16 * scale);
