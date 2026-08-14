@@ -327,8 +327,98 @@ export function drawProp(g, kind, x, y, t) {
   g.restore();
 }
 
+// ——— cutaway office buildings ———
+// The building is a dollhouse: rooms visible, desks drawn separately by the
+// renderer so workers can sit BEHIND them. Geometry contract:
+export const FLOOR_H = 16;   // sprite px per office floor
+export const BASE_H = 6;
+export const ROOF_Y = 10;    // body starts below the roof slab
+export const SPRITE_PAD_X = 6, SPRITE_PAD_Y = 12;
+
+export function officeWidth(seedStr) {
+  let h = 2166136261;
+  for (let i = 0; i < seedStr.length; i++) { h ^= seedStr.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return [46, 54, 62][(h >>> 0) % 3];
+}
+
+// Desk anchor points in sprite-local px (feet line of a seated worker).
+// Ground floor: lobby — door right, one desk left. Upper floors: two desks.
+export function deskAnchors(W, floors) {
+  const anchors = [];
+  const groundTop = SPRITE_PAD_Y + ROOF_Y + (floors - 1) * FLOOR_H;
+  anchors.push({ x: SPRITE_PAD_X + 13, y: groundTop + FLOOR_H - 2 });
+  for (let f = 1; f < floors; f++) {
+    const top = SPRITE_PAD_Y + ROOF_Y + (floors - 1 - f) * FLOOR_H;
+    anchors.push({ x: SPRITE_PAD_X + 13, y: top + FLOOR_H - 2 });
+    anchors.push({ x: SPRITE_PAD_X + W - 21, y: top + FLOOR_H - 2 });
+  }
+  return anchors;
+}
+
+// The desk itself — drawn AFTER the worker so they sit behind it. Screen
+// color reflects the activity kind; a subtle flicker sells "in use".
+const SCREEN_COLORS = {
+  researching: '#7ec3ff', reading: '#7ec3ff',
+  editing: '#8ee6a1', creating: '#8ee6a1',
+  testing: '#ffd97a', building: '#f0a860', running: '#f0a860',
+  version_control: '#ffb86b', installing: '#c9a9ff',
+  planning: '#e8e6f0', delegating: '#ff9ecf', unknown: '#9aa0c0',
+};
+// Drawn at a worker's feet line. The worker stays VISIBLE behind the desk:
+// monitor sits to one side at chest height (dir=1 monitor left, -1 right),
+// chair back on the other side, mug and papers on the table.
+export function drawDesk(g, kind, cx, feetY, t, scale, dir = 1) {
+  g.save();
+  g.translate(cx, feetY);
+  g.scale(scale, scale);
+  const X = (v) => v * dir;
+  const off = kind === 'off' || !kind;
+
+  // chair back + seat hint behind the worker
+  g.fillStyle = '#4a3a52';
+  g.fillRect(X(8), -14, 2.2, 9);
+  g.fillRect(dir > 0 ? 5 : -10, -6, 5, 1.6);
+
+  // table top + legs
+  g.fillStyle = '#5c4430';
+  g.fillRect(-13, -7, 26, 2.6);
+  g.fillStyle = '#4a3626';
+  g.fillRect(-12, -4.4, 2, 4.4);
+  g.fillRect(10, -4.4, 2, 4.4);
+
+  // monitor to the side, screen facing the worker
+  g.fillStyle = '#23263c';
+  g.fillRect(X(-11.5), -15.5, 8.6, 7);
+  const col = off ? '#252a49' : (SCREEN_COLORS[kind] || SCREEN_COLORS.unknown);
+  g.globalAlpha = off ? 1 : 0.72 + 0.28 * Math.abs(Math.sin(t / 210 + cx));
+  g.fillStyle = col;
+  g.fillRect(X(-11.5) + 0.8, -14.7, 7, 5.4);
+  g.globalAlpha = 1;
+  if (!off) { // moving "content" lines
+    g.fillStyle = 'rgba(20,22,40,0.55)';
+    const lines = Math.floor((t / 400 + cx) % 3) + 2;
+    for (let i = 0; i < lines; i++) {
+      g.fillRect(X(-11.5) + 1.6, -13.8 + i * 1.6, 4 + ((i * 37 + cx) % 2.5), 0.8);
+    }
+    // soft glow from the screen onto the worker
+    g.globalAlpha = 0.14;
+    g.fillStyle = col;
+    g.fillRect(X(-3), -14, 8, 8);
+    g.globalAlpha = 1;
+  }
+  g.fillStyle = '#3a3352';
+  g.fillRect(X(-8.4), -8.6, 1.8, 1.6); // monitor stand
+
+  // coffee mug + papers
+  g.fillStyle = '#c5586b';
+  g.fillRect(X(3.6), -9.4, 2.4, 2.4);
+  g.fillStyle = '#e8e6f0';
+  g.fillRect(X(6.8), -8.2, 3.6, 1.2);
+  g.restore();
+}
+
 // Building rendered onto a cached canvas; keyed by everything that affects
-// pixels. Lit windows twinkle via litSalt so the cache still gets reuse.
+// pixels. Room lights twinkle via litSalt so the cache still gets reuse.
 const buildingCache = new Map();
 export function buildingSprite(seedStr, floors, state, litSalt) {
   const key = `${seedStr}|${floors}|${state}|${litSalt}`;
@@ -351,131 +441,211 @@ export function buildingSprite(seedStr, floors, state, litSalt) {
   const roofs = [PALETTE.roofA, PALETTE.roofB, PALETTE.roofC, PALETTE.roofD, PALETTE.roofE];
   const wall = walls[rand(walls.length) | 0];
   const roof = roofs[rand(roofs.length) | 0];
-  const W = [36, 44, 52][rand(3) | 0];         // silhouette variety
-  const cols = Math.max(2, Math.floor((W - 8) / 10));
+  const W = officeWidth(seedStr);
   const roofProp = rand(3) | 0;                 // antenna / water tank / AC
-  const floorH = 12, base = 6;
-  const H = 10 + floors * floorH + base;
+  const H = ROOF_Y + floors * FLOOR_H + BASE_H;
   const c = document.createElement('canvas');
-  c.width = W + 12; c.height = H + 14;
+  c.width = W + SPRITE_PAD_X * 2;
+  c.height = SPRITE_PAD_Y + H + 4;
   const g = c.getContext('2d');
-  const ox = 6, oy = 12;
+  const ox = SPRITE_PAD_X, oy = SPRITE_PAD_Y;
   const dim = state === 'closed';
 
-  // body + side shade + left highlight
+  // structural shell: side walls the cutaway sits inside
   g.fillStyle = dim ? shade(wall, 0.55) : wall;
-  g.fillRect(ox, oy + 8, W, H - 8);
+  g.fillRect(ox - 3, oy + ROOF_Y - 2, 3, H - ROOF_Y - 2);
+  g.fillRect(ox + W, oy + ROOF_Y - 2, 3, H - ROOF_Y - 2);
   g.fillStyle = shade(wall, 0.72);
-  g.fillRect(ox + W - 6, oy + 8, 6, H - 8);
-  g.fillStyle = shade(wall, dim ? 0.62 : 1.12);
-  g.fillRect(ox, oy + 8, 2, H - 8);
+  g.fillRect(ox + W + 1.4, oy + ROOF_Y - 2, 1.6, H - ROOF_Y - 2);
 
   // roof slab with depth
   g.fillStyle = dim ? shade(roof, 0.6) : roof;
-  g.fillRect(ox - 2, oy + 4, W + 4, 6);
+  g.fillRect(ox - 4, oy + 4, W + 8, 6);
   g.fillStyle = shade(roof, 0.72);
-  g.fillRect(ox - 2, oy + 8, W + 4, 2);
+  g.fillRect(ox - 4, oy + 8, W + 8, 2);
   g.fillStyle = shade(roof, dim ? 0.7 : 1.18);
-  g.fillRect(ox - 2, oy + 4, W + 4, 1.4);
+  g.fillRect(ox - 4, oy + 4, W + 8, 1.4);
 
-  // roof furniture (by seed): antenna / water tank / AC unit — plus chimney
+  // roof furniture: antenna / water tank / AC — plus chimney
   g.fillStyle = shade(wall, 0.6);
   g.fillRect(ox + W - 12, oy - 2, 5, 8);
-  if (roofProp === 0) { // antenna with blinking-style tip
+  if (roofProp === 0) {
     g.fillStyle = '#4a5480';
     g.fillRect(ox + 6, oy - 8, 1.6, 12);
     g.fillRect(ox + 3, oy - 5, 8, 1.4);
     g.fillStyle = dim ? '#5a628c' : PALETTE.fail;
     g.fillRect(ox + 5.6, oy - 10, 2.4, 2.4);
-  } else if (roofProp === 1) { // water tank
+  } else if (roofProp === 1) {
     g.fillStyle = shade(wall, 0.8);
     g.fillRect(ox + 5, oy - 5, 9, 9);
     g.fillStyle = shade(wall, 0.6);
     g.fillRect(ox + 4, oy - 6, 11, 2);
     g.fillRect(ox + 6, oy + 3, 1.4, 3); g.fillRect(ox + 11.6, oy + 3, 1.4, 3);
-  } else { // AC unit
+  } else {
     g.fillStyle = '#9aa0c0';
     g.fillRect(ox + 6, oy - 1, 8, 5);
     g.fillStyle = '#6b7396';
     g.fillRect(ox + 7.5, oy + 0.4, 5, 2.2);
   }
 
-  // windows: lit ratio depends on state
-  const litChance = state === 'working' ? 0.85 : state === 'attention' ? 0.7
-    : state === 'idle' || state === 'waiting' ? 0.4 : state === 'failed' ? 0.6 : 0.06;
+  // cutaway rooms, top floor first
+  const litChance = state === 'working' ? 0.92 : state === 'attention' ? 0.8
+    : state === 'idle' || state === 'waiting' ? 0.5 : state === 'failed' ? 0.7 : 0.08;
   let salt = litSalt;
-  const winSpan = (W - 8) / cols;
-  for (let f = 0; f < floors; f++) {
-    for (let wx = 0; wx < cols; wx++) {
-      const x = ox + 5 + wx * winSpan, y = oy + 13 + f * floorH;
-      salt = (salt * 1103515245 + 12345) & 0x7fffffff;
-      const lit = (salt / 0x7fffffff) < litChance;
-      g.fillStyle = PALETTE.frame;
-      g.fillRect(x - 1, y - 1, 7, 9);
-      g.fillStyle = lit ? ((salt & 1) ? PALETTE.windowLit : PALETTE.windowLit2) : PALETTE.windowDark;
-      g.fillRect(x, y, 5, 7);
-      if (lit) { // sill glow — makes lit windows feel warm, not painted
-        g.fillStyle = 'rgba(255,217,122,0.25)';
-        g.fillRect(x - 1, y + 7, 7, 1.6);
-      }
-    }
-  }
+  for (let row = 0; row < floors; row++) {
+    const top = oy + ROOF_Y + row * FLOOR_H;
+    const isLobby = row === floors - 1;
+    salt = (salt * 1103515245 + 12345) & 0x7fffffff;
+    const lit = (salt / 0x7fffffff) < litChance;
 
-  // door with striped awning + lamp
-  const doorX = ox + W / 2 - 4;
-  const doorTop = oy + H - base - 13;
-  g.fillStyle = PALETTE.doorDark;
-  g.fillRect(doorX - 1, doorTop, 10, 13 + base - 2);
-  g.fillStyle = PALETTE.door;
-  g.fillRect(doorX, doorTop + 1, 8, 12 + base - 2);
-  g.fillStyle = dim ? shade('#8a6a48', 0.6) : '#d8b25e';
-  g.fillRect(doorX + 5.6, doorTop + 7, 1.6, 1.6); // handle
-  for (let a = 0; a < 5; a++) { // awning
-    g.fillStyle = a % 2 === 0 ? (dim ? shade(roof, 0.5) : roof) : '#e8e6f0';
-    g.fillRect(doorX - 3 + a * 3, doorTop - 3, 3, 3);
-  }
-  if (!dim) { // door lamp
-    g.fillStyle = PALETTE.windowLit;
-    g.fillRect(doorX - 4, doorTop + 2, 2, 2);
+    // room interior: warm when lit, cold blue when dark
+    g.fillStyle = lit && !dim ? '#5f4d44' : '#262b47';
+    g.fillRect(ox, top, W, FLOOR_H - 2);
+    if (lit && !dim) { // warm gradient band near the ceiling lamp
+      g.fillStyle = '#6d594c';
+      g.fillRect(ox, top, W, 4);
+    }
+    // floor strip inside the room
+    g.fillStyle = lit && !dim ? '#43362f' : '#1d2136';
+    g.fillRect(ox, top + FLOOR_H - 4, W, 2);
+    // floor slab between storeys
+    g.fillStyle = shade(wall, dim ? 0.5 : 0.85);
+    g.fillRect(ox - 3, top + FLOOR_H - 2, W + 6, 2);
+
+    // ceiling lamp
+    g.fillStyle = '#3a3352';
+    g.fillRect(ox + W / 2 - 2.4, top, 4.8, 1.6);
+    g.fillStyle = lit && !dim ? PALETTE.windowLit : '#3a4166';
+    g.fillRect(ox + W / 2 - 1.6, top + 1.6, 3.2, 1.6);
+
+    // back-wall dressing per room (seeded): picture / shelf / clock / whiteboard
+    const propPick = salt % 4;
+    const px = ox + W / 2 - 6;
+    if (propPick === 0) { // picture
+      g.fillStyle = '#3a3352'; g.fillRect(px, top + 3.4, 6, 5);
+      g.fillStyle = lit ? '#8fd0ff' : '#4a5480'; g.fillRect(px + 1, top + 4.4, 4, 3);
+    } else if (propPick === 1) { // shelf with books
+      g.fillStyle = '#5c4430'; g.fillRect(px - 2, top + 5.4, 12, 1.4);
+      for (let bIdx = 0; bIdx < 4; bIdx++) {
+        g.fillStyle = ['#c5586b', '#5b8bd9', '#5aa876', '#c78f4e'][bIdx];
+        g.fillRect(px - 1 + bIdx * 2.6, top + 2.4, 1.8, 3);
+      }
+    } else if (propPick === 2) { // wall clock
+      g.fillStyle = '#e8e6f0'; g.beginPath(); g.arc(px + 3, top + 5, 2.6, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#23263c'; g.fillRect(px + 2.7, top + 3.2, 0.7, 2);
+    } else { // whiteboard with scribbles
+      g.fillStyle = '#e8e6f0'; g.fillRect(px - 1, top + 3, 9, 5.4);
+      g.fillStyle = '#c5586b'; g.fillRect(px, top + 4, 4, 0.8);
+      g.fillStyle = '#5b8bd9'; g.fillRect(px, top + 5.6, 6, 0.8);
+    }
+
+    // corner plant on some floors
+    if ((salt >> 3) % 3 === 0) {
+      const plantX = isLobby ? ox + W - 30 : ox + W - 8;
+      g.fillStyle = '#c78f4e'; g.fillRect(plantX, top + FLOOR_H - 7, 3.4, 3);
+      g.fillStyle = '#5aa876';
+      g.fillRect(plantX + 0.4, top + FLOOR_H - 10, 2.6, 3.4);
+      g.fillRect(plantX - 1, top + FLOOR_H - 8.6, 2, 2);
+      g.fillRect(plantX + 2.6, top + FLOOR_H - 8.6, 2, 2);
+    }
+
+    // lobby: entry door on the right, welcome mat, coat rack
+    if (isLobby) {
+      g.fillStyle = PALETTE.doorDark;
+      g.fillRect(ox + W - 14, top + 2, 11, FLOOR_H - 4);
+      g.fillStyle = PALETTE.door;
+      g.fillRect(ox + W - 13, top + 3, 9, FLOOR_H - 5);
+      g.fillStyle = dim ? shade('#8a6a48', 0.6) : '#d8b25e';
+      g.fillRect(ox + W - 6.4, top + FLOOR_H / 2, 1.4, 1.4);
+      if (!dim) { // door lamp
+        g.fillStyle = PALETTE.windowLit;
+        g.fillRect(ox + W - 16.4, top + 3, 1.8, 1.8);
+      }
+      // welcome mat in front of the door
+      g.fillStyle = dim ? '#4a3d31' : '#8a5f3f';
+      g.fillRect(ox + W - 15, top + FLOOR_H - 3.4, 13, 1.6);
+      // coat rack beside the door with a hat + coat hanging
+      g.fillStyle = '#5c4430';
+      g.fillRect(ox + W - 19, top + 3, 1.4, FLOOR_H - 7);
+      g.fillRect(ox + W - 21, top + 3.6, 5.4, 1);
+      g.fillStyle = '#f0d24a';
+      g.fillRect(ox + W - 21.4, top + 2, 2.4, 1.8); // spare hard hat
+      g.fillStyle = '#4e79c9';
+      g.fillRect(ox + W - 17.4, top + 4.6, 2.6, 4.6); // hanging coat
+    }
   }
 
   // base/foundation
   g.fillStyle = shade(wall, 0.5);
-  g.fillRect(ox - 1, oy + H - base, W + 2, base - 2);
+  g.fillRect(ox - 3, oy + H - BASE_H, W + 6, BASE_H - 2);
 
   buildingCache.set(key, c);
   return c;
 }
 
-// Temporary worksite: a striped tent with a job sign and a little fence.
+// Temporary worksite: a site-office trailer — one cutaway room with a desk,
+// on skids, flying the company flag. Still obviously temporary, but an office.
+export const TRAILER_W = 44;
+export function trailerDeskAnchor() {
+  // sprite-local feet line of the seated worker inside the trailer
+  return { x: 6 + 13, y: 10 + 4 + FLOOR_H - 2 };
+}
 const tentCache = new Map();
 export function tentSprite(state) {
-  const key = 'tent|' + state;
+  const key = 'trailer|' + state;
   if (tentCache.has(key)) return tentCache.get(key);
   const c = document.createElement('canvas');
-  c.width = 52; c.height = 44;
+  const W = TRAILER_W;
+  c.width = W + 12; c.height = 10 + 4 + FLOOR_H + 12;
   const g = c.getContext('2d');
-  const t1 = state === 'closed' ? shade(PALETTE.tent1, 0.55) : PALETTE.tent1;
-  const t2 = state === 'closed' ? shade(PALETTE.tent2, 0.55) : PALETTE.tent2;
+  const ox = 6, oy = 10;
+  const dim = state === 'closed';
+  const body = dim ? shade(PALETTE.tent1, 0.55) : PALETTE.tent1;
 
-  // tent body
-  for (let y = 0; y < 22; y++) {
-    const half = (y / 22) * 20;
-    g.fillStyle = (Math.floor(y / 4) % 2 === 0) ? t1 : t2;
-    g.fillRect(26 - half, 12 + y, half * 2, 1);
-  }
-  // opening
-  g.fillStyle = '#2a2438';
-  g.beginPath();
-  g.moveTo(26, 20); g.lineTo(31, 34); g.lineTo(21, 34); g.closePath();
-  g.fill();
-  // pole + flag
-  g.fillStyle = PALETTE.tentPole; g.fillRect(25, 4, 2, 9);
-  g.fillStyle = PALETTE.attention; g.fillRect(27, 4, 7, 4);
-  // fence posts
+  // flag pole
+  g.fillStyle = PALETTE.tentPole; g.fillRect(ox + 2, oy - 8, 1.8, 12);
+  g.fillStyle = dim ? shade(PALETTE.attention, 0.5) : PALETTE.attention;
+  g.fillRect(ox + 3.8, oy - 8, 7, 4);
+
+  // flat roof
+  g.fillStyle = shade(body, 0.75);
+  g.fillRect(ox - 3, oy + 2, W + 6, 3);
+  g.fillStyle = shade(body, 1.1);
+  g.fillRect(ox - 3, oy + 2, W + 6, 1);
+
+  // shell walls
+  g.fillStyle = body;
+  g.fillRect(ox - 3, oy + 4, 3, FLOOR_H);
+  g.fillRect(ox + W, oy + 4, 3, FLOOR_H);
+
+  // cutaway room
+  const top = oy + 4;
+  g.fillStyle = dim ? '#262b47' : '#5f4d44';
+  g.fillRect(ox, top, W, FLOOR_H - 2);
+  if (!dim) { g.fillStyle = '#6d594c'; g.fillRect(ox, top, W, 3.4); }
+  g.fillStyle = dim ? '#1d2136' : '#43362f';
+  g.fillRect(ox, top + FLOOR_H - 4, W, 2);
+  // ceiling bulb on a wire
+  g.fillStyle = '#3a3352'; g.fillRect(ox + W / 2, top, 1, 2.4);
+  g.fillStyle = dim ? '#3a4166' : PALETTE.windowLit;
+  g.fillRect(ox + W / 2 - 1, top + 2.4, 3, 2.4);
+  // pinboard on the back wall
+  g.fillStyle = '#5c4430'; g.fillRect(ox + W - 16, top + 3, 9, 6);
+  g.fillStyle = '#e8e6f0'; g.fillRect(ox + W - 15, top + 4, 3, 2);
+  g.fillStyle = '#8fd0ff'; g.fillRect(ox + W - 11, top + 4.6, 3, 2);
+  // door on the right
+  g.fillStyle = PALETTE.doorDark;
+  g.fillRect(ox + W - 5.4, top + 2, 5.4, FLOOR_H - 4);
+
+  // skids + steps
+  g.fillStyle = shade(body, 0.5);
+  g.fillRect(ox - 3, oy + 4 + FLOOR_H, W + 6, 2.4);
+  g.fillStyle = '#3a3352';
+  g.fillRect(ox + 2, oy + 6.4 + FLOOR_H, 5, 2.6);
+  g.fillRect(ox + W - 7, oy + 6.4 + FLOOR_H, 5, 2.6);
   g.fillStyle = PALETTE.tentPole;
-  for (const x of [2, 10, 42, 50]) g.fillRect(x, 30, 2, 7);
-  g.fillRect(2, 32, 10, 1.5); g.fillRect(42, 32, 10, 1.5);
+  g.fillRect(ox + W + 1, oy + 5 + FLOOR_H, 4, 1.8); // step
+
   tentCache.set(key, c);
   return c;
 }
