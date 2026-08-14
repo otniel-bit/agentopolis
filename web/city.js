@@ -14,7 +14,7 @@ const DISTRICT_W = 4 * PLOT_W + 48;   // fits the plot spiral's first 4 columns
 const DISTRICT_H = 4 * PLOT_H + 66;
 const DISTRICT_GAP = 46;
 const HEADER = 20;
-const WALK_SPEED = 56; // px/s — unhurried, city-stroll pace
+const WALK_SPEED = 84; // px/s — unhurried, city-stroll pace
 
 // Where an OVERFLOW worker stands outside (everyone with a desk works inside).
 const STATIONS = {

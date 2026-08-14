@@ -4,21 +4,24 @@
 import {
   PALETTE, workerSprite, drawProp, buildingSprite, tentSprite, drawStatusIcon,
   moonSprite, glowSprite, treeSprite, lampSprite,
+  deskAnchors, officeWidth, drawDesk, trailerDeskAnchor, TRAILER_W,
+  FLOOR_H, ROOF_Y, BASE_H, SPRITE_PAD_X, SPRITE_PAD_Y,
 } from './sprites.js';
 
-const PLOT_W = 64, PLOT_H = 58;
+const BSCALE = 2;                     // buildings drawn at worker scale — cutaway offices
+const PLOT_W = 160, PLOT_H = 200;
 const DISTRICT_W = 4 * PLOT_W + 48;   // fits the plot spiral's first 4 columns
 const DISTRICT_H = 4 * PLOT_H + 66;
 const DISTRICT_GAP = 46;
 const HEADER = 20;
-const WALK_SPEED = 34; // px/s — unhurried, city-stroll pace
+const WALK_SPEED = 84; // px/s — unhurried, city-stroll pace
 
-// Where a worker stands, relative to its building's door, per activity.
+// Where an OVERFLOW worker stands outside (everyone with a desk works inside).
 const STATIONS = {
-  researching: [-28, 6], editing: [-10, 12], creating: [-10, 12],
-  testing: [28, 6], building: [20, 14], running: [20, 14],
-  version_control: [-22, 16], installing: [12, 18], planning: [-28, 14],
-  delegating: [0, 20], unknown: [8, 16],
+  researching: [-50, 10], editing: [-18, 20], creating: [-18, 20],
+  testing: [50, 10], building: [36, 24], running: [36, 24],
+  version_control: [-40, 28], installing: [22, 32], planning: [-50, 24],
+  delegating: [0, 34], unknown: [14, 28],
 };
 
 export function createCity(canvas, { onSelect } = {}) {
@@ -51,12 +54,23 @@ export function createCity(canvas, { onSelect } = {}) {
   // and each row starts below the tallest district above it. Discovery
   // order (col/row from the server) stays stable, so geography is learnable.
   let origins = new Map();
+  let rowH = PLOT_H;
+  function computeRowH() {
+    let maxH = 84; // trailer sprite height x scale
+    for (const b of snap.buildings) {
+      if (!b.permanent) continue;
+      const m = metricsFor(b);
+      maxH = Math.max(maxH, (SPRITE_PAD_Y + ROOF_Y + m.floors * FLOOR_H + BASE_H + 4) * BSCALE);
+    }
+    rowH = Math.min(PLOT_H, maxH + 34);
+  }
   function hasBuildings(d) {
     return snap.buildings.some((b) => b.districtId === d.id);
   }
   function relayout() {
     origins = new Map();
     if (!snap) return;
+    computeRowH();
     const rows = new Map();
     for (const d of snap.districts) {
       if (!hasBuildings(d)) continue; // empty land isn't drawn or reserved
@@ -75,7 +89,7 @@ export function createCity(canvas, { onSelect } = {}) {
           causeways.push({
             x1: prevEdge - 5,
             x2: x + 5,
-            y: y + HEADER + 20 + PLOT_H - 6,
+            y: y + HEADER + 20 + rowH - 6,
           });
         }
         prevEdge = x + e.w;
@@ -89,9 +103,57 @@ export function createCity(canvas, { onSelect } = {}) {
 
   const districtPos = (d) => origins.get(d.id) || { x: 0, y: 0 };
 
+  // Crew per building (stable order) — drives floors, desks, and seats.
+  let crewMap = new Map();
+  function rebuildCrewMap() {
+    crewMap = new Map();
+    if (!snap) return;
+    const byBuilding = new Map();
+    for (const a of snap.agents) {
+      if (a.finishedAt || !a.buildingId) continue;
+      if (!byBuilding.has(a.buildingId)) byBuilding.set(a.buildingId, []);
+      byBuilding.get(a.buildingId).push(a);
+    }
+    for (const [bid, list] of byBuilding) {
+      list.sort((x, y) => (x.spawnedAt - y.spawnedAt) || (x.id < y.id ? -1 : 1));
+      crewMap.set(bid, list.map((a) => a.id));
+    }
+  }
+
+  function metricsFor(b) {
+    const crew = (crewMap.get(b.id) || []).length;
+    const floors = Math.min(4, Math.max(2, 1 + Math.ceil(crew / 2)));
+    return { floors, W: officeWidth(b.id + b.name) };
+  }
+
+  // World position of a desk seat (worker feet line).
+  function deskWorld(b, slot) {
+    const door = buildingPos(b);
+    if (!b.permanent) {
+      const a = trailerDeskAnchor();
+      const cw = TRAILER_W + 12, ch = 10 + 4 + FLOOR_H + 12;
+      return { x: door.x - cw + a.x * BSCALE, y: door.y + 6 - ch * BSCALE + a.y * BSCALE };
+    }
+    const m = metricsFor(b);
+    const anchors = deskAnchors(m.W, m.floors);
+    const a = anchors[Math.min(slot, anchors.length - 1)];
+    const cw = m.W + SPRITE_PAD_X * 2;
+    const ch = SPRITE_PAD_Y + ROOF_Y + m.floors * FLOOR_H + BASE_H + 4;
+    return { x: door.x - cw + a.x * BSCALE, y: door.y + 6 - ch * BSCALE + a.y * BSCALE };
+  }
+
+  function deskCountFor(b) {
+    if (!b.permanent) return 1;
+    return 1 + (metricsFor(b).floors - 1) * 2;
+  }
+
+  // Desk slots alternate walls: 0 and odd slots sit on the left wall
+  // (monitor toward it), even slots mirror on the right.
+  const deskDir = (slot) => (slot === 0 || slot % 2 === 1) ? 1 : -1;
+
   // Districts are drawn only as large as their occupied plots.
   function districtExtent(d) {
-    let maxX = 1, maxY = 0;
+    let maxX = 0, maxY = 0;
     for (const b of snap.buildings) {
       if (b.districtId !== d.id) continue;
       maxX = Math.max(maxX, b.plot.x);
@@ -99,7 +161,7 @@ export function createCity(canvas, { onSelect } = {}) {
     }
     return {
       w: Math.min(DISTRICT_W, 52 + (maxX + 1) * PLOT_W),
-      h: Math.min(DISTRICT_H, HEADER + 26 + (maxY + 1) * PLOT_H),
+      h: Math.min(DISTRICT_H, HEADER + 26 + (maxY + 1) * rowH),
       rows: maxY + 1,
     };
   }
@@ -110,7 +172,7 @@ export function createCity(canvas, { onSelect } = {}) {
     const o = districtPos(d);
     return {
       x: o.x + 26 + b.plot.x * PLOT_W + PLOT_W / 2,
-      y: o.y + HEADER + 20 + b.plot.y * PLOT_H + PLOT_H - 12, // door line
+      y: o.y + HEADER + 20 + b.plot.y * rowH + rowH - 12, // door line
     };
   }
 
@@ -129,7 +191,7 @@ export function createCity(canvas, { onSelect } = {}) {
   function fit() {
     const b = worldBounds();
     const w = canvas.clientWidth, h = canvas.clientHeight;
-    cam.zoom = Math.max(0.5, Math.min(2.4, Math.min(w / b.w, h / b.h) * 0.92));
+    cam.zoom = Math.max(0.4, Math.min(2.4, Math.min(w / b.w, h / b.h) * 0.96));
     cam.x = b.x + b.w / 2;
     cam.y = b.y + b.h / 2;
     fitted = true;
@@ -206,6 +268,7 @@ export function createCity(canvas, { onSelect } = {}) {
 
   function syncWorkers(now, dt) {
     if (!snap) return;
+    rebuildCrewMap();
     const alive = new Set();
     let idx = 0;
     for (const a of snap.agents) {
@@ -215,6 +278,9 @@ export function createCity(canvas, { onSelect } = {}) {
       const door = buildingPos(b);
       let w = workers.get(a.id);
       if (!w) {
+        // agents that finished before we ever saw them don't get a ghost
+        // entrance — their completion already counts in the summary
+        if (a.finishedAt) continue;
         w = {
           x: door.x, y: door.y - 4, tx: door.x, ty: door.y,
           phase: (a.seed * 10) % Math.PI, frame: 0, walkT: 0,
@@ -224,23 +290,48 @@ export function createCity(canvas, { onSelect } = {}) {
         if (!a.isRoot) burst(door, 5, ['#cfd6ff']); // puff of arrival
       }
 
-      // pick a destination
+      // pick a destination: your desk if you have one, otherwise outside
       const spread = 1 + (idx++ % 3);
+      const crew = crewMap.get(a.buildingId) || [];
+      const slot = crew.indexOf(a.id);
+      const hasDesk = slot > -1 && slot < deskCountFor(b);
+      w.desk = null;
+      // finished workers linger a beat, then fade out with a puff
+      if (a.finishedAt && !w.leaveAt) w.leaveAt = now + 1400 + (a.seed * 1200);
       if (a.finishedAt && w.leaveAt && now > w.leaveAt) {
-        w.tx = door.x; w.ty = door.y - 2; // walk back inside
-        if (Math.hypot(w.x - w.tx, w.y - w.ty) < 3) w.gone = true;
+        if (!w.fadeStart) {
+          w.fadeStart = now;
+          if (!reducedMotion) {
+            for (let i = 0; i < 4; i++) {
+              particles.push({
+                x: w.x + (Math.random() - 0.5) * 10, y: w.y - 6 - Math.random() * 8,
+                vx: (Math.random() - 0.5) * 10, vy: -8 - Math.random() * 6,
+                g: -2, life: 0.8, color: 'rgba(200,205,235,0.6)', size: 2.4,
+              });
+            }
+          }
+        }
+        if (now - w.fadeStart > 700) w.gone = true;
       } else if (a.state === 'attention') {
-        w.tx = door.x; w.ty = door.y + 26;
+        w.tx = door.x; w.ty = door.y + 16; // out front on the road, hand up
+      } else if (!a.finishedAt && hasDesk) {
+        const d = deskWorld(b, slot);
+        w.tx = d.x; w.ty = d.y;
+        w.desk = {
+          slot,
+          kind: a.activity && !a.activity.done ? a.activity.kind : 'off',
+          dir: b.permanent ? deskDir(slot) : 1,
+        };
       } else if (a.activity) {
         const st = STATIONS[a.activity.kind] || STATIONS.unknown;
-        w.tx = door.x + st[0] + (a.isRoot ? 0 : spread * 6 - 9);
-        w.ty = door.y + st[1] + (a.isRoot ? 0 : (spread % 2) * 7);
+        w.tx = door.x + st[0] + (a.isRoot ? 0 : spread * 8 - 12);
+        w.ty = door.y + st[1] + (a.isRoot ? 0 : (spread % 2) * 9);
       } else {
-        // idle: gentle wander near the door
+        // idle overflow: gentle wander near the door
         if (!w.wanderUntil || now > w.wanderUntil) {
           w.wanderUntil = now + 2600 + Math.random() * 3600;
-          w.tx = door.x + (Math.random() - 0.5) * 44;
-          w.ty = door.y + 10 + Math.random() * 16;
+          w.tx = door.x + (Math.random() - 0.5) * 60;
+          w.ty = door.y + 14 + Math.random() * 20;
         }
       }
 
@@ -333,10 +424,10 @@ export function createCity(canvas, { onSelect } = {}) {
       const mx = (a.x + b.x) / 2;
       const glow = glowSprite();
       ctx.globalAlpha = 0.2;
-      ctx.drawImage(glow, mx - 16 * z, a.y - 14 * z, 32 * z, 32 * z);
+      ctx.drawImage(glow, mx - 22 * z, a.y - 22 * z, 44 * z, 44 * z);
       ctx.globalAlpha = 1;
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(lampSprite(), mx - 4 * z, a.y - 18 * z, 8 * z, 20 * z);
+      ctx.drawImage(lampSprite(), mx - 5 * z, a.y - 26 * z, 10 * z, 26 * z);
     }
   }
 
@@ -411,7 +502,7 @@ export function createCity(canvas, { onSelect } = {}) {
 
     // roads between plot rows, with curbs
     for (let r = 0; r < ext.rows; r++) {
-      const y = p0.y + (HEADER + 20 + r * PLOT_H + PLOT_H - 6) * z;
+      const y = p0.y + (HEADER + 20 + r * rowH + rowH - 6) * z;
       if (y > p0.y + H - 6 * z) break;
       ctx.fillStyle = 'rgba(0,0,0,0.18)';
       ctx.fillRect(p0.x + 6 * z, y - 1 * z, W - 12 * z, 9 * z);
@@ -426,19 +517,19 @@ export function createCity(canvas, { onSelect } = {}) {
     // trees on the margins (deterministic corners)
     ctx.imageSmoothingEnabled = false;
     const tree = treeSprite(seed);
-    ctx.drawImage(tree, p0.x + W - 24 * z, p0.y + 6 * z, 18 * z, 24 * z);
+    ctx.drawImage(tree, p0.x + W - 34 * z, p0.y + 4 * z, 27 * z, 36 * z);
     if (ext.w > 220) {
-      ctx.drawImage(treeSprite(seed + 1), p0.x + 6 * z, p0.y + H - 30 * z, 18 * z, 24 * z);
+      ctx.drawImage(treeSprite(seed + 1), p0.x + 30 * z, p0.y + H - 42 * z, 27 * z, 36 * z);
     }
 
     // street lamps flanking the first road, with warm pools
-    const lampY = p0.y + (HEADER + 20 + PLOT_H - 6) * z;
+    const lampY = p0.y + (HEADER + 20 + rowH - 6) * z;
     const glow = glowSprite();
     for (const lx of [p0.x + 12 * z, p0.x + W - 16 * z]) {
       ctx.globalAlpha = 0.22;
-      ctx.drawImage(glow, lx - 12 * z, lampY - 16 * z, 32 * z, 32 * z);
+      ctx.drawImage(glow, lx - 18 * z, lampY - 24 * z, 48 * z, 48 * z);
       ctx.globalAlpha = 1;
-      ctx.drawImage(lampSprite(), lx, lampY - 16 * z, 8 * z, 20 * z);
+      ctx.drawImage(lampSprite(), lx, lampY - 26 * z, 12 * z, 30 * z);
     }
 
     // district label — quieter than before
@@ -459,18 +550,17 @@ export function createCity(canvas, { onSelect } = {}) {
     const door = toScreen(pos.x, pos.y);
 
     let sprite;
-    let floors = 2;
     if (b.permanent) {
-      floors = 2 + (b.name.length % 3);
+      const m = metricsFor(b);
       const litSalt = (b.state === 'working' && !reducedMotion)
         ? Math.floor(t / 1400) % 7  // slow twinkle
         : 3;
-      sprite = buildingSprite(b.id + b.name, floors, b.state, litSalt);
+      sprite = buildingSprite(b.id + b.name, m.floors, b.state, litSalt);
     } else {
       sprite = tentSprite(b.state);
     }
 
-    let sw = sprite.width * 1.15 * z, sh = sprite.height * 1.15 * z;
+    let sw = sprite.width * BSCALE * z, sh = sprite.height * BSCALE * z;
     let yScale = 1;
     const promo = promoAnims.get(b.id);
     if (promo != null) {
@@ -482,10 +572,10 @@ export function createCity(canvas, { onSelect } = {}) {
     const x = door.x - sw / 2;
     const y = door.y - sh * yScale + 6 * z;
 
-    // ground shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    // ground shadow — light-handed, it's a hint not a stain
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
     ctx.beginPath();
-    ctx.ellipse(door.x, door.y + 5 * z, sw * 0.46, 5 * z, 0, 0, Math.PI * 2);
+    ctx.ellipse(door.x, door.y + 5 * z, sw * (b.permanent ? 0.44 : 0.34), 3.5 * z, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // warm presence glow — the "someone is home" light
@@ -503,6 +593,24 @@ export function createCity(canvas, { onSelect } = {}) {
 
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(sprite, x, y, sw, sh * yScale);
+
+    // unstaffed desks: an office has furniture even when nobody's home
+    if (yScale === 1) {
+      const crewLen = (crewMap.get(b.id) || []).length;
+      if (b.permanent) {
+        const m = metricsFor(b);
+        const anchors = deskAnchors(m.W, m.floors);
+        for (let s = crewLen; s < anchors.length; s++) {
+          const dw = deskWorld(b, s);
+          const ds = toScreen(dw.x, dw.y);
+          drawDesk(ctx, 'off', ds.x, ds.y, t, 1.5 * z, deskDir(s));
+        }
+      } else if (crewLen === 0) {
+        const dw = deskWorld(b, 0);
+        const ds = toScreen(dw.x, dw.y);
+        drawDesk(ctx, 'off', ds.x, ds.y, t, 1.5 * z, 1);
+      }
+    }
 
     // state flash overlay
     const flash = flashes.get(b.id);
@@ -557,7 +665,8 @@ export function createCity(canvas, { onSelect } = {}) {
     if (!w) return;
     const z = cam.zoom;
     const p = toScreen(w.x, w.y);
-    const scale = 2 * z;
+    const seated = !!(w.desk && !w.moving);
+    const scale = (seated ? 1.8 : 2) * z;
 
     let pose = 'idle', frame = Math.floor(t / 480) % 2;
     if (a.state === 'attention') {
@@ -568,20 +677,35 @@ export function createCity(canvas, { onSelect } = {}) {
       pose = 'work'; frame = Math.floor(t / 260) % 2;
     }
 
-    // shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath();
-    ctx.ellipse(p.x, p.y + 15 * z, 7 * z, 2.4 * z, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // shadow (outside only — indoors the floor is the shadow)
+    if (!seated) {
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y + 15 * z, 7 * z, 2.4 * z, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     const spr = workerSprite(a.seed, a.agentType, pose, frame);
     ctx.imageSmoothingEnabled = false;
-    const fade = a.finishedAt ? Math.max(0.35, 1 - (Date.now() - a.finishedAt) / 240000) : 1;
+    let fade = a.finishedAt ? Math.max(0.35, 1 - (Date.now() - a.finishedAt) / 240000) : 1;
+    if (w.fadeStart) fade = Math.max(0, 0.9 - (performance.now() - w.fadeStart) / 700);
     ctx.globalAlpha = fade;
-    ctx.drawImage(spr, p.x - 6 * scale, p.y - 8 * scale + Math.sin(w.phase + t / 400) * (reducedMotion ? 0 : 0.8) * z, 12 * scale, 16 * scale);
+    const bob = seated ? 0 : Math.sin(w.phase + t / 400) * (reducedMotion ? 0 : 0.8) * z;
+    ctx.drawImage(spr, p.x - 6 * scale, p.y - 8 * scale + bob, 12 * scale, 16 * scale);
 
-    // activity prop next to working sprite
-    if (pose === 'work' && a.activity) {
+    if (seated) {
+      // the desk beside the worker: monitor color = what they're doing
+      drawDesk(ctx, w.desk.kind, p.x, p.y + 8 * scale, t, 1.5 * z, w.desk.dir);
+      // keystroke sparks drifting up from the keyboard
+      if (pose === 'work' && !reducedMotion && Math.random() < 0.06) {
+        particles.push({
+          x: w.x - 6 * w.desk.dir + (Math.random() - 0.5) * 4, y: w.y - 6,
+          vx: (Math.random() - 0.5) * 6, vy: -14 - Math.random() * 8,
+          g: 6, life: 0.55, color: 'rgba(235,240,255,0.85)', size: 1.1,
+        });
+      }
+    } else if (pose === 'work' && a.activity) {
+      // outside worker: activity prop in hand
       ctx.save();
       ctx.translate(p.x + 7 * z, p.y + 2 * z);
       ctx.scale(z * 1.4, z * 1.4);
